@@ -7,6 +7,10 @@
   Interactive Plotly waveforms with synchronized audio playback
 </p>
 
+<p align="left">
+  <a href="https://camilziane.github.io/plotwave/">Live interactive demo</a>
+</p>
+
 **Click anywhere in the waveform to hear the audio while inspecting it visually.  
 Overlay multiple audio tracks or add additional signals (labels, predictions, segmentation, scores) on top of the waveform.**
 
@@ -108,3 +112,9 @@ Public API:
 See [examples/getting_started.ipynb](https://github.com/camilziane/plotwave/blob/main/examples/getting_started.ipynb) for a full walkthrough.
 
 Developer workflow: [DEVELOPERS.md](https://github.com/camilziane/plotwave/blob/main/DEVELOPERS.md)
+
+To refresh the GitHub Pages demo locally:
+
+```bash
+uv run python scripts/build_pages_demo.py
+```
