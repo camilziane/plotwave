@@ -4,11 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>plotwave live demo</title>
-  <link rel="icon" href="./favicon/favicon.ico">
-  <link rel="icon" type="image/svg+xml" href="./favicon/favicon.svg">
-  <link rel="icon" type="image/png" sizes="96x96" href="./favicon/favicon-96x96.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="./favicon/apple-touch-icon.png">
-  <link rel="manifest" href="./favicon/site.webmanifest">
+  <link rel="icon" type="image/png" href="/plotwave/favicon-96x96.png" sizes="96x96">
+  <link rel="icon" type="image/svg+xml" href="/plotwave/favicon.svg">
+  <link rel="icon" href="/plotwave/favicon.ico">
+  <link rel="shortcut icon" href="/plotwave/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/plotwave/apple-touch-icon.png">
+  <link rel="mask-icon" href="/plotwave/favicon.svg" color="#111827">
+  <link rel="manifest" href="/plotwave/site.webmanifest">
+  <meta name="apple-mobile-web-app-title" content="plotwave">
   <meta name="theme-color" content="#0b0c10">
   <style>
     :root {
@@ -214,12 +217,13 @@
       <div class="hero-copy">
         <h1>Hear the waveform while you inspect it.</h1>
         <p class="lede">
-          <strong>plotwave</strong> is a Python library that turns Plotly signal views into interactive,
-          playable audio plots. This demo lets you switch between two chord
-          progressions while keeping both labeled segment lanes in view.
+          <strong>plotwave</strong> is a Python library that turns Plotly
+          signal views into interactive, playable audio plots. This demo lets
+          you switch between two chord progressions while keeping both labeled
+          segment lanes in view.
         </p>
         <div class="actions">
-          <a class="button primary" href="demo.html">Open demo only</a>
+          <a class="button primary" href="demo.html?v=02c0682e66">Open demo only</a>
           <a class="button secondary" href="https://github.com/camilziane/plotwave">View repository</a>
         </div>
       </div>
@@ -244,7 +248,7 @@
     <section class="frame">
       <iframe
         title="plotwave interactive demo"
-        src="./demo.html"
+        src="./demo.html?v=02c0682e66"
         loading="eager"
       ></iframe>
     </section>

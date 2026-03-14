@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import shutil
 import sys
 from importlib import import_module
@@ -13,6 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 
 REPO_URL = "https://github.com/camilziane/plotwave"
 PAGES_URL = "https://camilziane.github.io/plotwave/"
+PAGES_PATH = "/plotwave"
 
 
 def main() -> None:
@@ -23,6 +25,43 @@ def main() -> None:
     shutil.copy2(
         REPO_ROOT / "assets" / "logo_name_black.png",
         docs_assets_dir / "logo_name_black.png",
+    )
+    favicon_source_dir = REPO_ROOT / "docs" / "favicon"
+    for favicon_name in (
+        "favicon.ico",
+        "favicon.svg",
+        "favicon-96x96.png",
+        "apple-touch-icon.png",
+        "site.webmanifest",
+        "web-app-manifest-192x192.png",
+        "web-app-manifest-512x512.png",
+    ):
+        shutil.copy2(favicon_source_dir / favicon_name, docs_dir / favicon_name)
+    root_manifest = docs_dir / "site.webmanifest"
+    root_manifest.write_text(
+        """{
+  "name": "plotwave",
+  "short_name": "plotwave",
+  "icons": [
+    {
+      "src": "/plotwave/web-app-manifest-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/plotwave/web-app-manifest-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "theme_color": "#0b0c10",
+  "background_color": "#f7f4ee",
+  "display": "standalone"
+}
+""",
+        encoding="utf-8",
     )
     signal_helpers = import_module("examples.signal_helpers")
     build_progression = signal_helpers.build_progression
@@ -103,7 +142,9 @@ def main() -> None:
             },
         },
     )
-    (docs_dir / "demo.html").write_text(demo.html(), encoding="utf-8")
+    demo_html = demo.html()
+    (docs_dir / "demo.html").write_text(demo_html, encoding="utf-8")
+    demo_version = hashlib.sha256(demo_html.encode("utf-8")).hexdigest()[:10]
 
     index_html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -111,11 +152,14 @@ def main() -> None:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>plotwave live demo</title>
-  <link rel="icon" href="./favicon/favicon.ico">
-  <link rel="icon" type="image/svg+xml" href="./favicon/favicon.svg">
-  <link rel="icon" type="image/png" sizes="96x96" href="./favicon/favicon-96x96.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="./favicon/apple-touch-icon.png">
-  <link rel="manifest" href="./favicon/site.webmanifest">
+  <link rel="icon" type="image/png" href="{PAGES_PATH}/favicon-96x96.png" sizes="96x96">
+  <link rel="icon" type="image/svg+xml" href="{PAGES_PATH}/favicon.svg">
+  <link rel="icon" href="{PAGES_PATH}/favicon.ico">
+  <link rel="shortcut icon" href="{PAGES_PATH}/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="{PAGES_PATH}/apple-touch-icon.png">
+  <link rel="mask-icon" href="{PAGES_PATH}/favicon.svg" color="#111827">
+  <link rel="manifest" href="{PAGES_PATH}/site.webmanifest">
+  <meta name="apple-mobile-web-app-title" content="plotwave">
   <meta name="theme-color" content="#0b0c10">
   <style>
     :root {{
@@ -327,7 +371,7 @@ def main() -> None:
           segment lanes in view.
         </p>
         <div class="actions">
-          <a class="button primary" href="demo.html">Open demo only</a>
+          <a class="button primary" href="demo.html?v={demo_version}">Open demo only</a>
           <a class="button secondary" href="{REPO_URL}">View repository</a>
         </div>
       </div>
@@ -352,7 +396,7 @@ def main() -> None:
     <section class="frame">
       <iframe
         title="plotwave interactive demo"
-        src="./demo.html"
+        src="./demo.html?v={demo_version}"
         loading="eager"
       ></iframe>
     </section>
