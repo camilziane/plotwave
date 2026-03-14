@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import sys
 from importlib import import_module
 from pathlib import Path
@@ -17,6 +18,10 @@ PAGES_URL = "https://camilziane.github.io/plotwave/"
 def main() -> None:
     docs_dir = Path("docs")
     docs_dir.mkdir(exist_ok=True)
+    docs_assets_dir = docs_dir / "assets"
+    docs_assets_dir.mkdir(exist_ok=True)
+    shutil.copy2(REPO_ROOT / "assets" / "logo_simple.png", docs_assets_dir / "logo_simple.png")
+    shutil.copy2(REPO_ROOT / "assets" / "logo_name.png", docs_assets_dir / "logo_name.png")
     signal_helpers = import_module("examples.signal_helpers")
     build_progression = signal_helpers.build_progression
     segment_items = signal_helpers.segment_items
@@ -98,6 +103,8 @@ def main() -> None:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>plotwave live demo</title>
+  <link rel="icon" type="image/png" href="./assets/logo_simple.png">
+  <link rel="apple-touch-icon" href="./assets/logo_simple.png">
   <style>
     :root {{
       color-scheme: light;
@@ -128,8 +135,16 @@ def main() -> None:
     }}
     .hero {{
       display: grid;
-      gap: 18px;
+      grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+      gap: 22px;
+      align-items: stretch;
       margin-bottom: 24px;
+    }}
+    .hero-copy {{
+      display: grid;
+      gap: 18px;
+      align-content: start;
+      padding: 12px 0;
     }}
     .eyebrow {{
       width: fit-content;
@@ -160,6 +175,48 @@ def main() -> None:
       flex-wrap: wrap;
       gap: 12px;
       margin-top: 4px;
+    }}
+    .brand-panel {{
+      position: relative;
+      overflow: hidden;
+      min-height: 260px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 28px;
+      padding: 28px;
+      background:
+        radial-gradient(circle at top right, rgba(249, 115, 22, 0.38), transparent 28%),
+        radial-gradient(circle at left 24%, rgba(79, 70, 229, 0.34), transparent 32%),
+        linear-gradient(145deg, #08090d 0%, #12141b 55%, #1a1d27 100%);
+      box-shadow:
+        0 24px 60px rgba(18, 20, 27, 0.24),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }}
+    .brand-panel::after {{
+      content: "";
+      position: absolute;
+      inset: 14px;
+      border-radius: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      pointer-events: none;
+    }}
+    .brand-mark {{
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 18px;
+      height: 100%;
+      align-content: space-between;
+    }}
+    .brand-mark img {{
+      display: block;
+      width: min(100%, 420px);
+      height: auto;
+      filter: drop-shadow(0 18px 26px rgba(0, 0, 0, 0.3));
+    }}
+    .brand-note {{
+      max-width: 32ch;
+      color: rgba(247, 240, 230, 0.82);
+      font: 500 0.97rem/1.6 ui-sans-serif, system-ui, sans-serif;
     }}
     .button {{
       display: inline-flex;
@@ -217,12 +274,18 @@ def main() -> None:
       color: #38455f;
     }}
     @media (max-width: 720px) {{
+      .hero {{
+        grid-template-columns: 1fr;
+      }}
       main {{
         width: min(100% - 18px, 1160px);
         padding-top: 18px;
       }}
       .frame {{
         border-radius: 20px;
+      }}
+      .brand-panel {{
+        min-height: 220px;
       }}
       iframe {{
         height: 760px;
@@ -233,16 +296,27 @@ def main() -> None:
 <body>
   <main>
     <section class="hero">
-      <div class="eyebrow">plotwave live demo</div>
-      <h1>Hear the waveform while you inspect it.</h1>
-      <p class="lede">
-        <strong>plotwave</strong> turns Plotly signal views into interactive,
-        playable audio plots. This demo overlays waveform, envelope, and
-        annotated segments in one shareable HTML view.
-      </p>
-      <div class="actions">
-        <a class="button primary" href="demo.html">Open demo only</a>
-        <a class="button secondary" href="{REPO_URL}">View repository</a>
+      <div class="hero-copy">
+        <div class="eyebrow">plotwave live demo</div>
+        <h1>Hear the waveform while you inspect it.</h1>
+        <p class="lede">
+          <strong>plotwave</strong> turns Plotly signal views into interactive,
+          playable audio plots. This demo overlays waveform, envelope, and
+          annotated segments in one shareable HTML view.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="demo.html">Open demo only</a>
+          <a class="button secondary" href="{REPO_URL}">View repository</a>
+        </div>
+      </div>
+      <div class="brand-panel">
+        <div class="brand-mark">
+          <img src="./assets/logo_name.png" alt="plotwave logo">
+          <div class="brand-note">
+            Plotly-based audio visualization for notebooks and browsers, with
+            synchronized playback, overlays, labels, and interactive HTML export.
+          </div>
+        </div>
       </div>
     </section>
 
