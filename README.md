@@ -16,14 +16,6 @@ Overlay multiple audio tracks or add additional signals (labels, predictions, se
 
 Designed for **Jupyter notebooks**, `plotwave` can also be exported to **HTML**, making it easy to share interactive audio visualizations or log them in tools like **MLflow** for experiment analysis.
 
-
-<p align="left">
-  <img src="https://raw.githubusercontent.com/camilziane/plotwave/main/assets/example.png" alt="plotwave example output" width="1000">
-</p>
-<p align="left">
-  Example of aplotwave output
-</p>
-
 ## Install
 
 ```bash

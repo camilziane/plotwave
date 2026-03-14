@@ -45,8 +45,9 @@ def test_plot_audio_simple_passes_trace_kwargs() -> None:
     assert '"opacity": 0.4' in html
     assert '"width": 2' in html
     assert "Total Timespan:" in html
-    assert "🎵 voice" in html
-    assert "▶ Play" in html
+    assert '>voice</option>' in html
+    assert 'id="' in html
+    assert ">Play</span>" in html
     assert '"range": [-1.499' in html or '"range": [-1.5' in html
     assert '1.499' in html or '1.5' in html
 
@@ -123,7 +124,26 @@ def test_multitrace_layout_and_config_are_propagated() -> None:
     assert '"scrollZoom": true' in html
     assert '"height": 420' in html
     assert "const globalTime = previousInfo.start_time + currentAudio.currentTime;" in html
-    assert "drawCursor(globalTime);" in html
+    assert 'class="plotwave-time-label"' in html
+    assert "Current Time:" in html
+    assert "Total Timespan:" in html
+    assert "const updateCurrentTimeLabel = (time) => {" in html
+    assert "const setToggleState = (isPlaying) => {" in html
+    assert 'const togglePlayback = async () => {' in html
+    assert 'rootElement.addEventListener("keydown", async (event) => {' in html
+    assert "width: 94px;" in html
+    assert "height: 36px;" in html
+    assert "display: inline-flex;" in html
+    assert "flex-direction: column;" in html
+    assert "flex-wrap: wrap;" in html
+    assert "flex: 1 1 auto;" in html
+    assert "justify-content: space-between;" in html
+    assert "line-height: 1.2;" in html
+    assert 'const resizePlot = () => Plotly.Plots.resize(plotDiv);' in html
+    assert 'const resizeObserver = new ResizeObserver(() => resizePlot());' in html
+    assert 'if (event.code === "Space") {' in html
+    assert 'if (event.key === "j" || event.key === "J") {' in html
+    assert 'if (event.key === "l" || event.key === "L") {' in html
 
 
 def test_series_without_time_raises_when_audio_basis_is_ambiguous() -> None:

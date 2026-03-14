@@ -20,58 +20,66 @@ def main() -> None:
     docs_dir.mkdir(exist_ok=True)
     docs_assets_dir = docs_dir / "assets"
     docs_assets_dir.mkdir(exist_ok=True)
-    shutil.copy2(REPO_ROOT / "assets" / "logo_simple.png", docs_assets_dir / "logo_simple.png")
-    shutil.copy2(REPO_ROOT / "assets" / "logo_name.png", docs_assets_dir / "logo_name.png")
+    shutil.copy2(
+        REPO_ROOT / "assets" / "logo_name_black.png",
+        docs_assets_dir / "logo_name_black.png",
+    )
     signal_helpers = import_module("examples.signal_helpers")
     build_progression = signal_helpers.build_progression
     segment_items = signal_helpers.segment_items
-    smooth_envelope = signal_helpers.smooth_envelope
 
     sr = 16_000
-    chord_names = ["Bm", "G", "D", "A"]
-    time, progression, segments = build_progression(chord_names, sr=sr)
-    envelope = smooth_envelope(progression, window=1000)
+    first_progression_names = ["Bm", "G", "D", "A"]
+    second_progression_names = ["Bm", "D", "F#m", "E"]
+    time, first_progression, first_segments = build_progression(first_progression_names, sr=sr)
+    time_alt, second_progression, second_segments = build_progression(
+        second_progression_names,
+        sr=sr,
+    )
 
-    pred_segments = [
-        {"start": 0.0, "end": 0.55, "label": "Bm"},
-        {"start": 2.95, "end": 4.85, "label": "G"},
-        {"start": 6.1, "end": 8.05, "label": "D"},
-        {"start": 8.15, "end": 8.35, "label": "A"},
-        {"start": 9.15, "end": 11.0, "label": "A"},
+    first_color = "#2563eb"
+    second_color = "#ea580c"
+    first_segment_items = [{**item, "color": first_color} for item in segment_items(first_segments)]
+    second_segment_items = [
+        {**item, "color": second_color} for item in segment_items(second_segments)
     ]
-    gt_segments = segment_items(segments)
-    color_map = {
-        "Bm": "#4f46e5",
-        "G": "#059669",
-        "D": "#d97706",
-        "A": "#ef4444",
-    }
+    max_time = max(float(time[-1]), float(time_alt[-1]))
 
     demo = plotwave.plot(
         [
             plotwave.audio(
-                progression,
+                first_progression,
                 sr,
-                name="Progression",
-                color="#5b6c8f",
+                time=time,
+                name="Progression 1",
+                color=first_color,
                 line={"width": 1.3},
                 hovertemplate="t=%{x:.2f}s<br>sample=%{y:.3f}<extra>Audio</extra>",
             ),
-            plotwave.series(
-                envelope,
-                time=time,
-                name="Envelope",
-                color="rgba(249, 115, 22, 0.96)",
-                line={"width": 3},
-                fill="tozeroy",
-                opacity=0.18,
-                hovertemplate="t=%{x:.2f}s<br>env=%{y:.3f}<extra>Envelope</extra>",
+            plotwave.audio(
+                second_progression,
+                sr,
+                time=time_alt,
+                name="Progression 2",
+                color=second_color,
+                line={"width": 1.3, "dash": "dot"},
+                hovertemplate="t=%{x:.2f}s<br>sample=%{y:.3f}<extra>Audio</extra>",
             ),
-            plotwave.segments(pred_segments, name="Pred", lane="top", color_map=color_map),
-            plotwave.segments(gt_segments, name="Ground truth", lane="bottom", color_map=color_map),
+            plotwave.segments(
+                first_segment_items,
+                name="Progression 1",
+                lane="top",
+                textfont={"color": "white"},
+            ),
+            plotwave.segments(
+                second_segment_items,
+                name="Progression 2",
+                lane="bottom",
+                textfont={"color": "white"},
+            ),
         ],
         layout={
-            "title": {"text": "Interactive plotwave demo"},
+            "title": {"text": "Two chord progressions, one player"},
             "height": 640,
             "plot_bgcolor": "#fffdf8",
             "paper_bgcolor": "#ffffff",
@@ -85,7 +93,7 @@ def main() -> None:
                 "showgrid": True,
                 "gridcolor": "#e7edf5",
                 "zeroline": False,
-                "range": [0, time[-1] * 1.08],
+                "range": [0, max_time * 1.08],
             },
             "yaxis": {
                 "title": {"text": "Amplitude"},
@@ -103,8 +111,12 @@ def main() -> None:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>plotwave live demo</title>
-  <link rel="icon" type="image/png" href="./assets/logo_simple.png">
-  <link rel="apple-touch-icon" href="./assets/logo_simple.png">
+  <link rel="icon" href="./favicon/favicon.ico">
+  <link rel="icon" type="image/svg+xml" href="./favicon/favicon.svg">
+  <link rel="icon" type="image/png" sizes="96x96" href="./favicon/favicon-96x96.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./favicon/apple-touch-icon.png">
+  <link rel="manifest" href="./favicon/site.webmanifest">
+  <meta name="theme-color" content="#0b0c10">
   <style>
     :root {{
       color-scheme: light;
@@ -135,16 +147,22 @@ def main() -> None:
     }}
     .hero {{
       display: grid;
-      grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
       gap: 22px;
-      align-items: stretch;
       margin-bottom: 24px;
+      padding: 10px 0 2px;
+    }}
+    .hero-top {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
     }}
     .hero-copy {{
       display: grid;
       gap: 18px;
       align-content: start;
-      padding: 12px 0;
+      max-width: 860px;
     }}
     .eyebrow {{
       width: fit-content;
@@ -156,17 +174,28 @@ def main() -> None:
       color: var(--accent-2);
       background: rgba(79, 70, 229, 0.1);
     }}
+    .brand-lockup {{
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      min-height: 1px;
+    }}
+    .brand-lockup img {{
+      display: block;
+      width: min(190px, 34vw);
+      height: auto;
+    }}
     h1 {{
       margin: 0;
-      font-size: clamp(2.4rem, 6vw, 4.4rem);
-      line-height: 0.96;
+      font-size: clamp(2.4rem, 5.8vw, 4.9rem);
+      line-height: 0.9;
       letter-spacing: -0.04em;
-      max-width: 10ch;
+      max-width: 8.5ch;
     }}
     .lede {{
-      max-width: 70ch;
+      max-width: 58ch;
       margin: 0;
-      font-size: 1.1rem;
+      font-size: 1.08rem;
       line-height: 1.6;
       color: var(--muted);
     }}
@@ -176,47 +205,30 @@ def main() -> None:
       gap: 12px;
       margin-top: 4px;
     }}
-    .brand-panel {{
-      position: relative;
-      overflow: hidden;
-      min-height: 260px;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 28px;
-      padding: 28px;
-      background:
-        radial-gradient(circle at top right, rgba(249, 115, 22, 0.38), transparent 28%),
-        radial-gradient(circle at left 24%, rgba(79, 70, 229, 0.34), transparent 32%),
-        linear-gradient(145deg, #08090d 0%, #12141b 55%, #1a1d27 100%);
-      box-shadow:
-        0 24px 60px rgba(18, 20, 27, 0.24),
-        inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    }}
-    .brand-panel::after {{
-      content: "";
-      position: absolute;
-      inset: 14px;
-      border-radius: 22px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      pointer-events: none;
-    }}
-    .brand-mark {{
-      position: relative;
-      z-index: 1;
+    .hero-meta {{
       display: grid;
-      gap: 18px;
-      height: 100%;
-      align-content: space-between;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+      width: 100%;
     }}
-    .brand-mark img {{
-      display: block;
-      width: min(100%, 420px);
-      height: auto;
-      filter: drop-shadow(0 18px 26px rgba(0, 0, 0, 0.3));
+    .meta-card {{
+      padding: 16px 16px 18px;
+      border: 1px solid rgba(224, 218, 208, 0.95);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.62);
     }}
-    .brand-note {{
-      max-width: 32ch;
-      color: rgba(247, 240, 230, 0.82);
-      font: 500 0.97rem/1.6 ui-sans-serif, system-ui, sans-serif;
+    .meta-label {{
+      margin: 0 0 8px;
+      color: #4f46e5;
+      font: 700 0.7rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }}
+    .meta-text {{
+      margin: 0;
+      color: var(--text);
+      font: 600 0.92rem/1.45 ui-sans-serif, system-ui, sans-serif;
     }}
     .button {{
       display: inline-flex;
@@ -274,18 +286,22 @@ def main() -> None:
       color: #38455f;
     }}
     @media (max-width: 720px) {{
-      .hero {{
-        grid-template-columns: 1fr;
-      }}
       main {{
         width: min(100% - 18px, 1160px);
         padding-top: 18px;
       }}
+      .hero-top {{
+        align-items: flex-start;
+      }}
+      .brand-lockup img {{
+        width: min(150px, 48vw);
+      }}
+      .hero-meta {{
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }}
       .frame {{
         border-radius: 20px;
-      }}
-      .brand-panel {{
-        min-height: 220px;
       }}
       iframe {{
         height: 760px;
@@ -296,26 +312,39 @@ def main() -> None:
 <body>
   <main>
     <section class="hero">
-      <div class="hero-copy">
+      <div class="hero-top">
         <div class="eyebrow">plotwave live demo</div>
+        <div class="brand-lockup">
+          <img src="./assets/logo_name_black.png" alt="plotwave logo">
+        </div>
+      </div>
+      <div class="hero-copy">
         <h1>Hear the waveform while you inspect it.</h1>
         <p class="lede">
-          <strong>plotwave</strong> turns Plotly signal views into interactive,
-          playable audio plots. This demo overlays waveform, envelope, and
-          annotated segments in one shareable HTML view.
+          <strong>plotwave</strong> is a Python library that turns Plotly
+          signal views into interactive, playable audio plots. This demo lets
+          you switch between two chord progressions while keeping both labeled
+          segment lanes in view.
         </p>
         <div class="actions">
           <a class="button primary" href="demo.html">Open demo only</a>
           <a class="button secondary" href="{REPO_URL}">View repository</a>
         </div>
       </div>
-      <div class="brand-panel">
-        <div class="brand-mark">
-          <img src="./assets/logo_name.png" alt="plotwave logo">
-          <div class="brand-note">
-            Plotly-based audio visualization for notebooks and browsers, with
-            synchronized playback, overlays, labels, and interactive HTML export.
-          </div>
+      <div class="hero-meta">
+        <div class="meta-card">
+          <p class="meta-label">Playable</p>
+          <p class="meta-text">Click anywhere in the waveform to seek and listen.</p>
+        </div>
+        <div class="meta-card">
+          <p class="meta-label">Overlay-ready</p>
+          <p class="meta-text">
+            Mix multiple playable tracks and labeled segment lanes in one view.
+          </p>
+        </div>
+        <div class="meta-card">
+          <p class="meta-label">Shareable</p>
+          <p class="meta-text">Export the same interaction as a standalone HTML file.</p>
         </div>
       </div>
     </section>
