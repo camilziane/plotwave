@@ -49,13 +49,16 @@ env = np.abs(wav)
 plotwave.plot(
     [
         plotwave.audio(wav, sr, name="audio", color="#2563eb"),
-        plotwave.series(env, name="envelope", color="#f97316", fill="tozeroy"),
+        plotwave.series(env, sr=sr, name="envelope", color="#f97316", fill="tozeroy"),
     ],
     layout={"title": {"text": "Audio + envelope"}, "height": 520},
 )
 ```
 
-If `series(..., time=None)` is plotted next to audio, `plotwave` infers its time axis automatically when the audio timing is unambiguous.
+For `series(...)`, use:
+
+- `sr=...` when your values are evenly sampled
+- `time=...` when you already have an explicit time axis
 
 ## Segments
 

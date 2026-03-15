@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import base64
-import io
 import pathlib
-import wave
 
 import numpy as np
 import pytest
@@ -46,6 +44,7 @@ def test_plot_audio_simple_passes_trace_kwargs() -> None:
     assert '"width": 2' in html
     assert "Total Timespan:" in html
     assert '>voice</option>' in html
+    assert "data:audio/mp3;base64," in html
     assert 'id="' in html
     assert ">Play</span>" in html
     assert '"range": [-1.499' in html or '"range": [-1.5' in html
@@ -59,11 +58,12 @@ def test_plot_bitrate_resamples_embedded_audio() -> None:
     prepared, _, _ = plot._resolved()
     audio_info = next(trace.audio_info for trace in prepared if trace.audio_info is not None)
     assert audio_info is not None
-    assert audio_info["sample_rate"] == 2000
+    assert audio_info["sample_rate"] == 8000
+    assert audio_info["format"] == "mp3"
 
     audio_bytes = base64.b64decode(audio_info["b64_data"])
-    with wave.open(io.BytesIO(audio_bytes), "rb") as wav_file:
-        assert wav_file.getframerate() == 2000
+    assert audio_bytes[0] == 0xFF
+    assert audio_bytes[1] & 0xE0 == 0xE0
 
 
 def test_color_kw_sets_visible_scatter_line_color() -> None:
@@ -90,14 +90,14 @@ def test_plot_series_simple_with_time() -> None:
     assert '"x": [0.0' in html
 
 
-def test_series_without_time_infers_axis_from_single_audio() -> None:
+def test_series_with_sr_builds_time_axis_explicitly() -> None:
     wav = np.array([0.0, 1.0, 0.0, -1.0], dtype=float)
     env = np.array([0.1, 0.2, 0.3, 0.4], dtype=float)
 
     html = plotwave.plot(
         [
             plotwave.audio(wav, 4, name="wave"),
-            plotwave.series(env, name="env"),
+            plotwave.series(env, sr=4, name="env"),
         ]
     ).html()
 
@@ -129,8 +129,17 @@ def test_multitrace_layout_and_config_are_propagated() -> None:
     assert "Total Timespan:" in html
     assert "const updateCurrentTimeLabel = (time) => {" in html
     assert "const setToggleState = (isPlaying) => {" in html
-    assert 'const togglePlayback = async () => {' in html
-    assert 'rootElement.addEventListener("keydown", async (event) => {' in html
+    assert 'const togglePlayback = () => {' in html
+    assert 'const startPlayback = () => {' in html
+    assert 'const stopPlayback = () => {' in html
+    assert "let playbackAnchorAudioTime = 0;" in html
+    assert "const setPlaybackAnchor = (audioTime = currentAudio.currentTime) => {" in html
+    assert "const cursorFrameIntervalMs = 33;" in html
+    assert 'const plotArea = plotDiv.querySelector(".nsewdrag");' in html
+    assert "const eventToGlobalTime = (clientX) => {" in html
+    assert "audioElement.ontimeupdate = () => {" in html
+    assert 'const playResult = currentAudio.play();' in html
+    assert 'rootElement.addEventListener("keydown", (event) => {' in html
     assert "width: 94px;" in html
     assert "height: 36px;" in html
     assert "display: inline-flex;" in html
@@ -146,12 +155,11 @@ def test_multitrace_layout_and_config_are_propagated() -> None:
     assert 'if (event.key === "l" || event.key === "L") {' in html
 
 
-def test_series_without_time_raises_when_audio_basis_is_ambiguous() -> None:
-    with pytest.raises(ValueError, match="SeriesTrace with time=None requires explicit time"):
+def test_series_without_time_or_sr_raises_when_plotted_with_audio() -> None:
+    with pytest.raises(ValueError, match="explicit time or sr"):
         plotwave.plot(
             [
                 plotwave.audio(np.ones(4), 4, name="a"),
-                plotwave.audio(np.ones(6), 4, name="b"),
                 plotwave.series(np.linspace(0.0, 1.0, 4), name="env"),
             ]
         ).html()
@@ -257,6 +265,12 @@ def test_invalid_inputs_raise_clean_errors() -> None:
 
     with pytest.raises(ValueError, match="same length"):
         plotwave.series([0.0, 1.0], time=[0.0])
+
+    with pytest.raises(ValueError, match="either time or sr"):
+        plotwave.series([0.0, 1.0], time=[0.0, 1.0], sr=2)
+
+    with pytest.raises(ValueError, match="positive"):
+        plotwave.series([0.0, 1.0], sr=0)
 
     with pytest.raises(ValueError, match="cannot be empty"):
         plotwave.plot([])

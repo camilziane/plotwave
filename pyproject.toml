@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "plotwave"
-version = "0.1.0"
+version = "0.1.1"
 description = "Interactive audio and waveform plotting for notebooks and browsers."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,6 +26,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Visualization",
 ]
 dependencies = [
+  "lameenc>=1.8.2",
   "numpy>=1.26",
 ]
 
@@ -39,6 +40,7 @@ dev = [
   "mypy>=1.15.0",
   "pytest>=8.3.5",
   "ruff>=0.11.0",
+  "soundfile>=0.12.1",
 ]
 notebook = [
   "ipykernel>=6.29.5",

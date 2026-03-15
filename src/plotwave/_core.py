@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import base64
 import html
-import io
 import pathlib
 import tempfile
-import wave
 import webbrowser
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Sequence, cast
 
+import lameenc
 import numpy as np
 import numpy.typing as npt
 
@@ -19,6 +18,8 @@ TraceArgs = dict[str, Any]
 ReservedTraceKeys = {"x", "y", "type"}
 FloatArray = npt.NDArray[np.float64]
 Bitrate = int | float | str | None
+DEFAULT_EMBEDDED_MP3_BITRATE_BPS = 128_000
+MP3_SAMPLE_RATES = (8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000)
 DEFAULT_SEGMENT_COLORS = [
     "#1f77b4",
     "#2ca02c",
@@ -136,31 +137,43 @@ def _resample_audio(samples: FloatArray, *, source_sr: float, target_sr: float) 
     return np.asarray(resampled, dtype=np.float64)
 
 
+def _select_mp3_sample_rate(*, source_sr: float, bitrate: int | None) -> int:
+    target_sr = int(round(source_sr))
+    if bitrate is not None:
+        target_sr = min(target_sr, max(1, int(round(bitrate / 16))))
+    supported = [sample_rate for sample_rate in MP3_SAMPLE_RATES if sample_rate <= target_sr]
+    if supported:
+        return supported[-1]
+    return MP3_SAMPLE_RATES[0]
+
+
 def _encoded_audio_payload(
     samples: FloatArray,
     *,
     sr: float,
     bitrate: int | None = None,
-) -> tuple[str, int]:
-    encoded_sr = int(sr)
-    encoded_samples = samples
-    if bitrate is not None:
-        target_sr = max(1, min(encoded_sr, int(round(bitrate / 16))))
-        encoded_sr = target_sr
-        encoded_samples = _resample_audio(samples, source_sr=sr, target_sr=float(target_sr))
-    return _encode_wav_base64(encoded_samples, float(encoded_sr)), encoded_sr
+) -> tuple[str, int, str]:
+    encoded_sr = _select_mp3_sample_rate(source_sr=sr, bitrate=bitrate)
+    encoded_samples = _resample_audio(samples, source_sr=sr, target_sr=float(encoded_sr))
+    target_bitrate = bitrate if bitrate is not None else DEFAULT_EMBEDDED_MP3_BITRATE_BPS
+    return (
+        _encode_mp3_base64(encoded_samples, float(encoded_sr), bitrate=target_bitrate),
+        encoded_sr,
+        "mp3",
+    )
 
 
-def _encode_wav_base64(samples: FloatArray, sr: float) -> str:
+def _encode_mp3_base64(samples: FloatArray, sr: float, *, bitrate: int) -> str:
     clipped = np.clip(samples, -1.0, 1.0)
     pcm16 = (clipped * 32767).astype("<i2")
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(int(sr))
-        wav_file.writeframes(pcm16.tobytes())
-    return base64.b64encode(buffer.getvalue()).decode("ascii")
+    encoder = lameenc.Encoder()
+    encoder.set_channels(1)
+    encoder.set_in_sample_rate(int(sr))
+    encoder.set_out_sample_rate(int(sr))
+    encoder.set_bit_rate(max(8, int(round(bitrate / 1000))))
+    encoder.set_quality(2)
+    payload = bytes(encoder.encode(pcm16.tobytes()) + encoder.flush())
+    return base64.b64encode(payload).decode("ascii")
 
 
 def _is_notebook() -> bool:
@@ -276,34 +289,6 @@ def _segments_fallback_bounds(overlays: Sequence["SegmentsTrace"]) -> dict[str, 
     }
 
 
-def _time_basis_from_audio(audio_trace: "AudioTrace") -> tuple[float, float]:
-    start = float(audio_trace.time[0]) if audio_trace.time is not None else 0.0
-    duration = float(len(audio_trace.wav) / audio_trace.sr)
-    return start, duration
-
-
-def _infer_shared_audio_time_basis(
-    audio_items: Sequence["AudioTrace"],
-) -> tuple[float, float] | None:
-    if not audio_items:
-        return None
-
-    first_start, first_duration = _time_basis_from_audio(audio_items[0])
-    for audio_trace in audio_items[1:]:
-        start, duration = _time_basis_from_audio(audio_trace)
-        if not np.isclose(start, first_start) or not np.isclose(duration, first_duration):
-            return None
-    return first_start, first_duration
-
-
-def _time_from_basis(*, length: int, start: float, duration: float) -> FloatArray:
-    if duration <= 0:
-        raise ValueError("audio duration must be positive to infer series time")
-    if length <= 0:
-        raise ValueError("series length must be positive")
-    return start + np.arange(length, dtype=np.float64) * (duration / length)
-
-
 def _color_with_alpha(color: str, alpha: float) -> str:
     if color.startswith("#") and len(color) == 7:
         red = int(color[1:3], 16)
@@ -376,13 +361,18 @@ class AudioTrace:
         plotly_trace = _apply_scatter_color_defaults(plotly_trace)
 
         time_full = _as_time_array(self.time, length=len(self.wav), sr=self.sr)
-        b64_data, encoded_sr = _encoded_audio_payload(self.wav, sr=self.sr, bitrate=bitrate)
+        b64_data, encoded_sr, audio_format = _encoded_audio_payload(
+            self.wav,
+            sr=self.sr,
+            bitrate=bitrate,
+        )
         audio_info = {
             "name": str(self.trace.get("name", "audio")),
             "b64_data": b64_data,
             "start_time": float(time_full[0]),
             "duration": float(len(self.wav) / self.sr),
             "sample_rate": encoded_sr,
+            "format": audio_format,
         }
         return PreparedTrace(plotly_trace=plotly_trace, audio_info=audio_info)
 
@@ -391,14 +381,13 @@ class AudioTrace:
 class SeriesTrace:
     y: FloatArray
     time: FloatArray | None = None
+    sr: float | None = None
     step: int | None = None
     trace: TraceArgs = field(default_factory=dict)
 
-    def prepared(self, *, points: int, resolved_time: FloatArray | None = None) -> PreparedTrace:
-        if self.time is not None:
-            time = _as_time_array(self.time, length=len(self.y))
-        elif resolved_time is not None:
-            time = resolved_time
+    def prepared(self, *, points: int) -> PreparedTrace:
+        if self.time is not None or self.sr is not None:
+            time = _as_time_array(self.time, length=len(self.y), sr=self.sr)
         else:
             time = np.arange(len(self.y), dtype=float)
         time, values = _downsample(time, self.y, step=self.step, points=points)
@@ -558,25 +547,13 @@ class Plot:
             else:
                 pending_series.append(item)
 
-        inferred_basis: tuple[float, float] | None = None
-        if any(item.time is None for item in pending_series) and audio_items:
-            inferred_basis = _infer_shared_audio_time_basis(audio_items)
-            if inferred_basis is None:
-                raise ValueError(
-                    "SeriesTrace with time=None requires explicit time when audio traces do not "
-                    "share the same start and duration."
-                )
+        if audio_items and any(item.time is None and item.sr is None for item in pending_series):
+            raise ValueError(
+                "SeriesTrace plotted with audio requires explicit time or sr."
+            )
 
         for item in pending_series:
-            resolved_time = None
-            if item.time is None and inferred_basis is not None:
-                start, duration = inferred_basis
-                resolved_time = _time_from_basis(
-                    length=len(item.y),
-                    start=start,
-                    duration=duration,
-                )
-            prepared.append(item.prepared(points=self.points, resolved_time=resolved_time))
+            prepared.append(item.prepared(points=self.points))
         if not prepared and not overlays:
             raise ValueError("plot requires at least one trace")
         return prepared, overlays
@@ -694,13 +671,24 @@ def series(
     y: Sequence[float] | np.ndarray,
     *,
     time: Sequence[float] | np.ndarray | None = None,
+    sr: float | None = None,
     step: int | None = None,
     **trace: Any,
 ) -> SeriesTrace:
     _validate_trace_kwargs(trace)
+    if time is not None and sr is not None:
+        raise ValueError("series accepts either time or sr, not both")
+    if sr is not None and sr <= 0:
+        raise ValueError("sr must be a positive number")
     values = _as_float_array(y, name="y")
     time_array = None if time is None else _as_time_array(time, length=len(values))
-    return SeriesTrace(y=values, time=time_array, step=step, trace=dict(trace))
+    return SeriesTrace(
+        y=values,
+        time=time_array,
+        sr=None if sr is None else float(sr),
+        step=step,
+        trace=dict(trace),
+    )
 
 
 def _coerce_data(
@@ -801,6 +789,7 @@ def audio_trace_plot(
                 series(
                     trace_spec["y"],
                     time=trace_spec.get("x"),
+                    sr=trace_spec.get("sr"),
                     step=step,
                     **trace_kwargs,
                 )

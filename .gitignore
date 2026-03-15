@@ -9,4 +9,5 @@ __pycache__/
 dist/
 build/
 notebooks/*.html
+notebook_test
 
