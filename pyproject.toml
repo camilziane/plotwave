@@ -47,6 +47,17 @@ notebook = [
   "jupyter>=1.1.1",
 ]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.github",
+  "/assets",
+  "/docs",
+  "/examples/*.html",
+  "/examples/*.mp3",
+  "/notebook_test",
+  "/uv.lock",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/plotwave"]
 

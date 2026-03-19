@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import pathlib
 import sys
+import tomllib
 import types
 import wave
 
@@ -70,6 +71,13 @@ def test_public_api_exports_expected_symbols() -> None:
     assert set(plotwave.__all__) == expected
     for name in expected:
         assert hasattr(plotwave, name)
+
+
+def test_package_version_matches_pyproject() -> None:
+    pyproject = pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml"
+    metadata = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+
+    assert plotwave.__version__ == metadata["project"]["version"]
 
 
 def test_plot_audio_simple_passes_trace_kwargs() -> None:
@@ -384,7 +392,10 @@ def test_multitrace_layout_and_config_are_propagated() -> None:
     assert "const updateLoopVisuals = () => {" in html
     assert 'const inactiveBoxFill = "rgba(150, 150, 150, 0.82)";' in html
     assert "let playbackAnchorAudioTime = 0;" in html
-    assert "const setPlaybackAnchor = (audioTime = currentAudio.currentTime, force = false) => {" in html
+    assert (
+        "const setPlaybackAnchor = "
+        "(audioTime = currentAudio.currentTime, force = false) => {"
+    ) in html
     assert "if (drift < 0 && Math.abs(drift) < 0.12) return;" in html
     assert "let syncCursorPosition = null;" in html
     assert "const syncCursorOverlayBounds = () => {" in html

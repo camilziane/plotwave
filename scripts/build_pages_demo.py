@@ -105,7 +105,6 @@ def main() -> None:
                 textfont={"color": "white"},
                 color_map={
                     "E5": "#fe5b0f",
-                    "B": "#ff7636",
                     "B": "#f79466",
                     "F#": "#fdbc9e",
                 },
