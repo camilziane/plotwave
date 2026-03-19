@@ -551,17 +551,42 @@ def test_segment_label_click_exports_loop_metadata_for_audio() -> None:
     ).html()
 
     assert (
-        'const segmentInfos = [{"start": 0.5, "end": 1.5, "label": "Verse", "lane": "top"}];'
+        'const segmentInfos = [{"start": 0.5, "end": 1.5, "label": "Verse", '
+        '"lane": "top", "audio_index": 0}];'
         in html
     )
     assert "const loopEpsilonSeconds = 0.01;" in html
     assert "const findAudioIndexForRange = (startTime, endTime) => {" in html
+    assert "const preferredAudioIndexForSegment = (segment) => {" in html
     assert 'console.warn("plotwave could not loop segment outside audio bounds", segment);' in html
     assert "const eventToPaperY = (clientY) => {" in html
     assert "if (segmentLoop === activeLoop) {" in html
     assert "Plotly.relayout(plotDiv, loopVisualUpdates);" in html
     assert "endTime <= info.start_time + info.duration + loopEpsilonSeconds" in html
     assert "globalTime <= segment.end + loopEpsilonSeconds" in html
+
+
+def test_segment_label_click_uses_overlay_audio_index_for_each_lane() -> None:
+    wav = np.sin(np.linspace(0, 6 * np.pi, 512))
+
+    html = plotwave.plot(
+        [
+            plotwave.audio(wav, sr=128, name="top"),
+            plotwave.audio(wav, sr=128, name="bottom"),
+            plotwave.segments(
+                [{"start": 0.0, "end": 1.0, "label": "Top Label"}],
+                lane="top",
+            ),
+            plotwave.segments(
+                [{"start": 0.0, "end": 1.0, "label": "Bottom Label"}],
+                lane="bottom",
+            ),
+        ]
+    ).html()
+
+    assert '"label": "Top Label", "lane": "top", "audio_index": 0' in html
+    assert '"label": "Bottom Label", "lane": "bottom", "audio_index": 1' in html
+    assert "segment.audio_index" in html
 
 
 def test_save_writes_html_file(tmp_path: pathlib.Path) -> None:

@@ -521,6 +521,11 @@ def build_html(
           isTimeRangeInsideInfo(startTime, endTime, candidate)
         ));
       }};
+      const preferredAudioIndexForSegment = (segment) => {{
+        if (!Number.isInteger(segment.audio_index)) return null;
+        if (segment.audio_index < 0 || segment.audio_index >= audioInfos.length) return null;
+        return segment.audio_index;
+      }};
       const currentLoopRange = () => {{
         if (!activeLoop) return null;
         const info = currentInfo();
@@ -793,7 +798,13 @@ def build_html(
         return {{ wasPlaying, isInsideNextAudio }};
       }};
       const activateLoop = (segment) => {{
-        const nextAudioIndex = findAudioIndexForRange(segment.start, segment.end);
+        const preferredAudioIndex = preferredAudioIndexForSegment(segment);
+        const nextAudioIndex = (
+          preferredAudioIndex !== null
+          && isTimeRangeInsideInfo(segment.start, segment.end, audioInfos[preferredAudioIndex])
+        )
+          ? preferredAudioIndex
+          : findAudioIndexForRange(segment.start, segment.end);
         if (nextAudioIndex === -1) {{
           console.warn("plotwave could not loop segment outside audio bounds", segment);
           return;

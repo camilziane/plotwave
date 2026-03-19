@@ -1537,9 +1537,15 @@ class Plot:
 
     def _segment_loop_infos(self) -> list[dict[str, Any]]:
         segments: list[dict[str, Any]] = []
+        audio_count = sum(
+            isinstance(item, (AudioTrace, AudioFileTrace))
+            for item in self.data
+        )
+        overlay_index = 0
         for item in self.data:
             if not isinstance(item, SegmentsTrace):
                 continue
+            audio_index = min(overlay_index, audio_count - 1) if audio_count > 0 else None
             for segment in item.items:
                 segments.append(
                     {
@@ -1547,8 +1553,10 @@ class Plot:
                         "end": float(segment["end"]),
                         "label": str(segment["label"]),
                         "lane": item.lane,
+                        "audio_index": audio_index,
                     }
                 )
+            overlay_index += 1
         return segments
 
     def _best_notebook_bundle(

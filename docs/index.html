@@ -162,7 +162,7 @@
     iframe {
       display: block;
       width: 100%;
-      height: 700px;
+      height: 620px;
       border: 0;
       background: white;
     }
@@ -200,7 +200,7 @@
         border-radius: 20px;
       }
       iframe {
-        height: 760px;
+        height: 620px;
       }
     }
   </style>
@@ -218,12 +218,13 @@
         <h1>Hear the waveform while you inspect it.</h1>
         <p class="lede">
           <strong>plotwave</strong> is a Python library that turns Plotly
-          signal views into interactive, playable audio plots. This demo lets
-          you switch between two real MP3 tracks while keeping both labeled
-          chord lanes in view and loop a chord by clicking its label.
+          signal views into interactive, playable audio plots. This demo shows
+          a simple style transfer example where a "surrogate generative model" does two things: it
+          generates a VHS-style synth version of a short piano phrase and it
+          predicts the chord labels in the same view.
         </p>
         <div class="actions">
-          <a class="button primary" href="demo.html?v=24a3994f49">Open demo only</a>
+          <a class="button primary" href="demo.html?v=1f1d3a0845">Open demo only</a>
           <a class="button secondary" href="https://github.com/camilziane/plotwave">View repository</a>
         </div>
       </div>
@@ -233,34 +234,41 @@
           <p class="meta-text">Click anywhere in the waveform to seek and listen.</p>
         </div>
         <div class="meta-card">
-          <p class="meta-label">Overlay-ready</p>
+          <p class="meta-label">Comparable</p>
           <p class="meta-text">
-            Mix multiple playable tracks and labeled segment lanes in one view.
+            The dropdown next to Play lets you switch between the piano and the VHS-style synth.
           </p>
         </div>
         <div class="meta-card">
-          <p class="meta-label">Shareable</p>
-          <p class="meta-text">Export the same interaction as a standalone HTML file.</p>
+          <p class="meta-label">Loopable</p>
+          <p class="meta-text">Click a chord label to loop the audio for that labeled region.</p>
         </div>
       </div>
     </section>
 
+
     <section class="frame">
       <iframe
+        id="plotwave-demo-frame"
         title="plotwave interactive demo"
-        src="./demo.html?v=24a3994f49"
+        src="./demo.html?v=1f1d3a0845"
         loading="eager"
       ></iframe>
     </section>
 
-    <section class="notes">
-      <div>
-        Try clicking directly on the waveform to seek, then click a chord label
-        to loop that region while switching between the two audio tracks.
-      </div>
-      <div>Live page URL: <a href="https://camilziane.github.io/plotwave/">https://camilziane.github.io/plotwave/</a></div>
-      <div>Rebuild locally with <code>uv run python scripts/build_pages_demo.py</code>.</div>
-    </section>
+    <script>
+      (() => {
+        const demoFrame = document.getElementById("plotwave-demo-frame");
+        if (!(demoFrame instanceof HTMLIFrameElement)) return;
+        window.addEventListener("message", (event) => {
+          const data = event.data;
+          if (!data || data.type !== "plotwave-demo-height") return;
+          if (typeof data.height !== "number" || !Number.isFinite(data.height)) return;
+          demoFrame.style.height = `${Math.max(620, Math.ceil(data.height))}px`;
+        });
+      })();
+    </script>
+
   </main>
 </body>
 </html>

@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import html
 import hashlib
+import io
+import keyword
 import shutil
+import token
+import textwrap
+import tokenize
 from pathlib import Path
 
 import plotwave
@@ -11,6 +17,308 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO_URL = "https://github.com/camilziane/plotwave"
 PAGES_URL = "https://camilziane.github.io/plotwave/"
 PAGES_PATH = "/plotwave"
+
+DEMO_CODE_SNIPPET = (
+    textwrap.dedent(
+        """
+        import plotwave
+
+        plotwave.plot(
+            [
+                plotwave.audio_file("examples/plotwave_C_piano.wav", name="Piano", color="#2563eb"),
+                plotwave.audio_file(
+                    "examples/plotwave_C_VHS.wav",
+                    name="VHS-style synth",
+                    color="#ea580c",
+                    line={"dash": "dot"},
+                ),
+                plotwave.segments(
+                    [
+                        {"start": 0.0, "end": 2.09, "label": "C"},
+                        {"start": 2.09, "end": 4.18, "label": "Asus2"},
+                        {"start": 4.18, "end": 6.27, "label": "Esus2"},
+                        {"start": 6.27, "end": 8.3, "label": "B"},
+                    ],
+                    name="Ground Truth",
+                    lane="top",
+                    color_map={
+                        "C": "#0f62fe",
+                        "Asus2": "#367af7",
+                        "Esus2": "#82adfc",
+                        "B": "#bcd2fb",
+                    },
+                ),
+                plotwave.segments(
+                    [
+                        {"start": 0.0, "end": 2.09, "label": "C"},
+                        {"start": 2.09, "end": 4.18, "label": "D5"},
+                        {"start": 4.18, "end": 6.27, "label": "Esus2"},
+                        {"start": 6.27, "end": 8.3, "label": "B"},
+                    ],
+                    name="Prediction",
+                    lane="bottom",
+                    color_map={
+                        "C": "#0f62fe",
+                        "D5": "#ee9f0d",
+                        "Esus2": "#82adfc",
+                        "B": "#bcd2fb",
+                    },
+                ),
+            ],
+            layout={"title": {"text": "Style transfer: piano to VHS-style synth"}},
+        )
+        """
+    ).strip()
+    + "\n"
+)
+
+
+def _python_token_class(token_type: int, token_string: str) -> str | None:
+    if token_type == token.COMMENT:
+        return "py-comment"
+    if token_type == token.STRING:
+        return "py-string"
+    if token_type == token.NUMBER:
+        return "py-number"
+    if token_type == token.OP:
+        return "py-operator"
+    if token_type == token.NAME and keyword.iskeyword(token_string):
+        return "py-keyword"
+    if token_type == token.NAME and token_string == "plotwave":
+        return "py-module"
+    return None
+
+
+def highlight_python(code: str) -> str:
+    pieces: list[str] = []
+    lines = code.splitlines(keepends=True)
+    current_row = 1
+    current_col = 0
+
+    def append_plain(text: str) -> None:
+        if text:
+            pieces.append(html.escape(text))
+
+    for tok in tokenize.generate_tokens(io.StringIO(code).readline):
+        if tok.type == tokenize.ENDMARKER:
+            break
+        start_row, start_col = tok.start
+        end_row, end_col = tok.end
+        if current_row == start_row:
+            append_plain(lines[current_row - 1][current_col:start_col])
+        else:
+            append_plain(lines[current_row - 1][current_col:])
+            for row in range(current_row + 1, start_row):
+                append_plain(lines[row - 1])
+            append_plain(lines[start_row - 1][:start_col])
+        token_html = html.escape(tok.string)
+        token_class = _python_token_class(tok.type, tok.string)
+        if token_class:
+            pieces.append(f'<span class="{token_class}">{token_html}</span>')
+        else:
+            pieces.append(token_html)
+        current_row = end_row
+        current_col = end_col
+
+    if current_row <= len(lines):
+        append_plain(lines[current_row - 1][current_col:])
+        for row in range(current_row + 1, len(lines) + 1):
+            append_plain(lines[row - 1])
+
+    return "".join(pieces)
+
+
+def inject_demo_code_panel(document: str) -> str:
+    head_injection = textwrap.dedent(
+        """
+        <style>
+          html, body {
+            overflow-y: auto;
+            overflow-x: hidden;
+          }
+          .plotwave-code-panel {
+            margin: 0;
+            border-bottom: 1px solid #e4e1dc;
+            background: linear-gradient(180deg, #fffdfa 0%, #f8f4ee 100%);
+          }
+          .plotwave-code-panel summary {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 10px;
+            padding: 14px 18px;
+            cursor: pointer;
+            list-style: none;
+            -webkit-user-select: none;
+            user-select: none;
+          }
+          .plotwave-code-panel summary::-webkit-details-marker {
+            display: none;
+          }
+          .plotwave-code-panel__title {
+            color: #171717;
+            font: 700 13px/1.2 "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            letter-spacing: 0.01em;
+          }
+          .plotwave-code-panel__icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 999px;
+            background: rgba(79, 70, 229, 0.08);
+            color: #4f46e5;
+            flex: 0 0 auto;
+            transition: transform 180ms ease, background 180ms ease, color 180ms ease;
+          }
+          .plotwave-code-panel__icon svg {
+            width: 14px;
+            height: 14px;
+            stroke: currentColor;
+            stroke-width: 1.8;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+          }
+          .plotwave-code-panel[open] .plotwave-code-panel__icon {
+            transform: rotate(180deg);
+            background: rgba(79, 70, 229, 0.16);
+            color: #352ab8;
+          }
+          .plotwave-code-panel__body {
+            display: grid;
+            gap: 12px;
+            padding: 0 18px 16px;
+          }
+          .plotwave-code-panel__copy {
+            margin: 0;
+            color: #5f5a52;
+            font: 500 13px/1.55 "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+          }
+          .plotwave-code-panel__copy code {
+            padding: 2px 6px;
+            border-radius: 999px;
+            background: rgba(79, 70, 229, 0.08);
+            color: #4138c2;
+            font: 700 0.92em ui-monospace, SFMono-Regular, Menlo, monospace;
+          }
+          .plotwave-code-panel__pre {
+            margin: 0;
+            overflow-x: auto;
+            border: 1px solid #d8d3cc;
+            border-radius: 14px;
+            padding: 16px 18px;
+            background: #161616;
+          }
+          .plotwave-code-panel__pre code {
+            display: block;
+            min-width: max-content;
+            color: #f5f3ef;
+            font: 500 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+            tab-size: 4;
+          }
+          .plotwave-code-panel .py-keyword { color: #ff7b72; }
+          .plotwave-code-panel .py-string { color: #a5d6ff; }
+          .plotwave-code-panel .py-number { color: #79c0ff; }
+          .plotwave-code-panel .py-comment { color: #8b949e; }
+          .plotwave-code-panel .py-operator { color: #f2cc60; }
+          .plotwave-code-panel .py-module { color: #d2a8ff; }
+          @media (max-width: 720px) {
+            .plotwave-code-panel summary {
+              gap: 10px;
+            }
+          }
+        </style>
+        """
+    ).strip()
+
+    code_markup = textwrap.dedent(
+        """
+        <details class="plotwave-code-panel" id="plotwave-code-panel">
+          <summary>
+            <span class="plotwave-code-panel__icon" aria-hidden="true">
+              <svg viewBox="0 0 16 16" focusable="false">
+                <path d="M4 6l4 4 4-4"></path>
+              </svg>
+            </span>
+            <span class="plotwave-code-panel__title" id="plotwave-code-panel-title">Show Python code</span>
+          </summary>
+          <div class="plotwave-code-panel__body">
+            <pre class="plotwave-code-panel__pre"><code>__CODE_HTML__</code></pre>
+          </div>
+        </details>
+        """
+    ).replace("__CODE_HTML__", highlight_python(DEMO_CODE_SNIPPET))
+
+    panel_script = textwrap.dedent(
+        """
+        <script>
+          (() => {
+            const codePanel = document.getElementById("plotwave-code-panel");
+            const codePanelTitle = document.getElementById("plotwave-code-panel-title");
+            if (!codePanel) {
+              return;
+            }
+
+            const syncCodePanelTitle = () => {
+              if (!codePanelTitle) return;
+              codePanelTitle.textContent = codePanel.open
+                ? "Hide Python code"
+                : "Show Python code";
+            };
+
+            const measuredContentHeight = () => {
+              const bodyRect = document.body.getBoundingClientRect();
+              const bodyTop = bodyRect.top;
+              const childBottoms = Array.from(document.body.children)
+                .filter((child) => child instanceof HTMLElement)
+                .map((child) => child.getBoundingClientRect().bottom - bodyTop);
+              const bodyHeight = bodyRect.bottom - bodyTop;
+              return Math.ceil(Math.max(bodyHeight, ...childBottoms));
+            };
+
+            const publishHeight = () => {
+              if (!window.parent || window.parent === window) return;
+              const height = Math.max(620, measuredContentHeight());
+              window.parent.postMessage({ type: "plotwave-demo-height", height }, "*");
+            };
+
+            const publishHeightSoon = () => {
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  publishHeight();
+                });
+              });
+            };
+
+            codePanel.addEventListener("toggle", () => {
+              syncCodePanelTitle();
+              publishHeight();
+              publishHeightSoon();
+            });
+
+            if (typeof ResizeObserver !== "undefined") {
+              const heightObserver = new ResizeObserver(() => publishHeight());
+              heightObserver.observe(document.body);
+              heightObserver.observe(document.documentElement);
+              heightObserver.observe(codePanel);
+            }
+
+            window.addEventListener("load", publishHeight);
+            window.addEventListener("resize", publishHeight);
+            syncCodePanelTitle();
+            publishHeight();
+            publishHeightSoon();
+          })();
+        </script>
+        """
+    )
+
+    document = document.replace("</head>", f"{head_injection}\n</head>", 1)
+    document = document.replace("<body>", f"<body>\n{code_markup}", 1)
+    document = document.replace("</body>", f"{panel_script}\n</body>", 1)
+    return document
 
 
 def main() -> None:
@@ -59,20 +367,20 @@ def main() -> None:
 """,
         encoding="utf-8",
     )
-    first_audio_path = REPO_ROOT / "examples" / "plotwave_C.mp3"
-    second_audio_path = REPO_ROOT / "examples" / "plotwave_E5.mp3"
+    first_audio_path = REPO_ROOT / "examples" / "plotwave_C_piano.wav"
+    second_audio_path = REPO_ROOT / "examples" / "plotwave_C_VHS.wav"
 
     demo = plotwave.plot(
         [
             plotwave.audio_file(
                 first_audio_path,
-                name="First Audio",
+                name="Piano",
                 color="#2563eb",
                 line={"width": 1.3},
             ),
             plotwave.audio_file(
                 second_audio_path,
-                name="Second Audio",
+                name="VHS-style synth",
                 color="#ea580c",
                 line={"width": 1.3, "dash": "dot"},
             ),
@@ -81,9 +389,9 @@ def main() -> None:
                     {"start": 0.0, "end": 2.09, "label": "C"},
                     {"start": 2.09, "end": 4.18, "label": "Asus2"},
                     {"start": 4.18, "end": 6.27, "label": "Esus2"},
-                    {"start": 6.27, "end": 8.36, "label": "B"},
+                    {"start": 6.27, "end": 8.3, "label": "B"},
                 ],
-                name="First Chords",
+                name="Ground Truth",
                 lane="top",
                 textfont={"color": "white"},
                 color_map={
@@ -95,23 +403,24 @@ def main() -> None:
             ),
             plotwave.segments(
                 [
-                    {"start": 0.0, "end": 2.09, "label": "E5"},
-                    {"start": 2.09, "end": 4.18, "label": "B"},
-                    {"start": 4.18, "end": 6.27, "label": "B"},
-                    {"start": 6.27, "end": 8.36, "label": "F#"},
+                    {"start": 0.0, "end": 2.09, "label": "C"},
+                    {"start": 2.09, "end": 4.18, "label": "D5"},
+                    {"start": 4.18, "end": 6.27, "label": "Esus2"},
+                    {"start": 6.27, "end": 8.3, "label": "B"},
                 ],
-                name="Second Chords",
+                name="Prediction",
                 lane="bottom",
                 textfont={"color": "white"},
                 color_map={
-                    "E5": "#fe5b0f",
-                    "B": "#f79466",
-                    "F#": "#fdbc9e",
+                    "C": "#0f62fe",
+                    "D5": "#ee9f0d",
+                    "Esus2": "#82adfc",
+                    "B": "#bcd2fb",
                 },
             ),
         ],
         layout={
-            "title": {"text": "Two MP3 tracks with loopable chord labels"},
+            "title": {"text": "Style transfer: piano to VHS-style synth"},
             "height": 640,
             "plot_bgcolor": "#fffdf8",
             "paper_bgcolor": "#ffffff",
@@ -134,7 +443,7 @@ def main() -> None:
             },
         },
     )
-    demo_html = demo.html()
+    demo_html = inject_demo_code_panel(demo.html())
     (docs_dir / "demo.html").write_text(demo_html, encoding="utf-8")
     demo_version = hashlib.sha256(demo_html.encode("utf-8")).hexdigest()[:10]
 
@@ -302,7 +611,7 @@ def main() -> None:
     iframe {{
       display: block;
       width: 100%;
-      height: 700px;
+      height: 620px;
       border: 0;
       background: white;
     }}
@@ -340,7 +649,7 @@ def main() -> None:
         border-radius: 20px;
       }}
       iframe {{
-        height: 760px;
+        height: 620px;
       }}
     }}
   </style>
@@ -358,9 +667,10 @@ def main() -> None:
         <h1>Hear the waveform while you inspect it.</h1>
         <p class="lede">
           <strong>plotwave</strong> is a Python library that turns Plotly
-          signal views into interactive, playable audio plots. This demo lets
-          you switch between two real MP3 tracks while keeping both labeled
-          chord lanes in view and loop a chord by clicking its label.
+          signal views into interactive, playable audio plots. This demo shows
+          a simple style transfer example where a "surrogate generative model" does two things: it
+          generates a VHS-style synth version of a short piano phrase and it
+          predicts the chord labels in the same view.
         </p>
         <div class="actions">
           <a class="button primary" href="demo.html?v={demo_version}">Open demo only</a>
@@ -373,34 +683,41 @@ def main() -> None:
           <p class="meta-text">Click anywhere in the waveform to seek and listen.</p>
         </div>
         <div class="meta-card">
-          <p class="meta-label">Overlay-ready</p>
+          <p class="meta-label">Comparable</p>
           <p class="meta-text">
-            Mix multiple playable tracks and labeled segment lanes in one view.
+            The dropdown next to Play lets you switch between the piano and the VHS-style synth.
           </p>
         </div>
         <div class="meta-card">
-          <p class="meta-label">Shareable</p>
-          <p class="meta-text">Export the same interaction as a standalone HTML file.</p>
+          <p class="meta-label">Loopable</p>
+          <p class="meta-text">Click a chord label to loop the audio for that labeled region.</p>
         </div>
       </div>
     </section>
 
+
     <section class="frame">
       <iframe
+        id="plotwave-demo-frame"
         title="plotwave interactive demo"
         src="./demo.html?v={demo_version}"
         loading="eager"
       ></iframe>
     </section>
 
-    <section class="notes">
-      <div>
-        Try clicking directly on the waveform to seek, then click a chord label
-        to loop that region while switching between the two audio tracks.
-      </div>
-      <div>Live page URL: <a href="{PAGES_URL}">{PAGES_URL}</a></div>
-      <div>Rebuild locally with <code>uv run python scripts/build_pages_demo.py</code>.</div>
-    </section>
+    <script>
+      (() => {{
+        const demoFrame = document.getElementById("plotwave-demo-frame");
+        if (!(demoFrame instanceof HTMLIFrameElement)) return;
+        window.addEventListener("message", (event) => {{
+          const data = event.data;
+          if (!data || data.type !== "plotwave-demo-height") return;
+          if (typeof data.height !== "number" || !Number.isFinite(data.height)) return;
+          demoFrame.style.height = `${{Math.max(620, Math.ceil(data.height))}}px`;
+        }});
+      }})();
+    </script>
+
   </main>
 </body>
 </html>
