@@ -1,9 +1,11 @@
 from plotwave._core import (
+    AudioFileTrace,
     AudioTrace,
     Plot,
     SegmentsTrace,
     SeriesTrace,
     audio,
+    audio_file,
     audio_trace_plot,
     plot,
     segments,
@@ -11,11 +13,13 @@ from plotwave._core import (
 )
 
 __all__ = [
+    "AudioFileTrace",
     "AudioTrace",
     "Plot",
     "SegmentsTrace",
     "SeriesTrace",
     "audio",
+    "audio_file",
     "audio_trace_plot",
     "plot",
     "segments",

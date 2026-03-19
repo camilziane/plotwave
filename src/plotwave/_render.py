@@ -32,6 +32,7 @@ def build_html(
     layout: dict[str, Any],
     config: dict[str, Any],
     frame_height: int,
+    segment_infos: list[dict[str, Any]] | None = None,
 ) -> str:
     root_id = f"plotwave-{uuid.uuid4().hex}"
     plot_id = f"{root_id}-plot"
@@ -50,6 +51,12 @@ def build_html(
     plotly_traces = [trace.plotly_trace for trace in traces]
     audio_infos = [trace.audio_info for trace in traces if trace.audio_info is not None]
 
+    def audio_src(info: dict[str, Any]) -> str:
+        src = info.get("src")
+        if src is not None:
+            return str(src)
+        return f"data:audio/{info['format']};base64,{info['b64_data']}"
+
     channel_options_html = "".join(
         f"<option value='{index}'>{html.escape(info['name'])}</option>"
         for index, info in enumerate(audio_infos)
@@ -57,7 +64,7 @@ def build_html(
     audio_elements_html = "".join(
         (
             f"<audio id='{root_id}-audio-{index}' "
-            f"src='data:audio/{info['format']};base64,{info['b64_data']}'></audio>"
+            f"src='{html.escape(audio_src(info), quote=True)}'></audio>"
         )
         for index, info in enumerate(audio_infos)
     )
@@ -266,7 +273,76 @@ def build_html(
     const config = {json.dumps(config)};
     const audioInfos = {json.dumps(audio_infos)};
     const audioIds = {json.dumps(audio_element_ids)};
+    const segmentInfos = {json.dumps(segment_infos or [])};
     const resizePlot = () => Plotly.Plots.resize(plotDiv);
+    const notebookBaseUrl = () => {{
+      try {{
+        const parentBody = window.parent && window.parent.document
+          ? window.parent.document.body
+          : null;
+        const currentBody = document.body;
+        const candidates = [
+          parentBody ? parentBody.dataset.baseUrl : null,
+          parentBody ? parentBody.getAttribute("data-base-url") : null,
+          currentBody ? currentBody.dataset.baseUrl : null,
+          currentBody ? currentBody.getAttribute("data-base-url") : null,
+        ];
+        for (const candidate of candidates) {{
+          if (typeof candidate === "string" && candidate.trim()) {{
+            return candidate.replace(/[/]+$/, "");
+          }}
+        }}
+      }} catch (error) {{
+        console.warn("plotwave could not inspect notebook base URL", error);
+      }}
+      return "";
+    }};
+    const notebookContext = () => {{
+      try {{
+        const pathname = window.parent && window.parent.location
+          ? window.parent.location.pathname
+          : window.location.pathname;
+        const markers = ["/lab/tree/", "/notebooks/", "/tree/"];
+        for (const marker of markers) {{
+          const index = pathname.indexOf(marker);
+          if (index === -1) continue;
+          const baseUrl = pathname.slice(0, index);
+          const notebookPath = pathname.slice(index + marker.length);
+          const lastSlash = notebookPath.lastIndexOf("/");
+          const notebookDir = lastSlash >= 0 ? notebookPath.slice(0, lastSlash + 1) : "";
+          return {{ baseUrl, notebookDir, isNotebook: true }};
+        }}
+      }} catch (error) {{
+        console.warn("plotwave could not inspect notebook path", error);
+      }}
+      const baseUrl = notebookBaseUrl();
+      return {{ baseUrl, notebookDir: "", isNotebook: Boolean(baseUrl) }};
+    }};
+    const resolveAudioSrc = (src) => {{
+      if (
+        typeof src !== "string"
+        || src.startsWith("data:")
+        || src.startsWith("blob:")
+        || src.includes("://")
+        || src.startsWith("http://")
+        || src.startsWith("https://")
+      ) {{
+        return src;
+      }}
+      if (src.startsWith("/files/")) {{
+        return `${{notebookBaseUrl()}}${{src}}`;
+      }}
+      const normalizedSrc = src.replace(/^[.][/]+/, "").replace(/^[/]+/, "");
+      const context = notebookContext();
+      if (
+        context.isNotebook
+        && normalizedSrc
+        && !src.startsWith("/")
+      ) {{
+        return `${{context.baseUrl}}/files/${{context.notebookDir}}${{normalizedSrc}}`;
+      }}
+      return src;
+    }};
 
     if (audioInfos.length > 0) {{
       const initialTime = audioInfos[0].start_time;
@@ -299,22 +375,138 @@ def build_html(
       const speedSelect = document.getElementById({json.dumps(speed_id)});
       const currentTimeValue = document.getElementById({json.dumps(current_time_value_id)});
       const audioElements = audioIds.map((audioId) => document.getElementById(audioId));
+      const segmentVisuals = segmentInfos.map((segment, index) => {{
+        const bandShape = Array.isArray(layout.shapes) ? layout.shapes[index * 2] : null;
+        const boxShape = Array.isArray(layout.shapes) ? layout.shapes[index * 2 + 1] : null;
+        const annotation = Array.isArray(layout.annotations) ? layout.annotations[index] : null;
+        return {{
+          bandShapeIndex: index * 2,
+          boxShapeIndex: index * 2 + 1,
+          annotationIndex: index,
+          bandFillcolor: bandShape && typeof bandShape.fillcolor === "string"
+            ? bandShape.fillcolor
+            : null,
+          boxFillcolor: boxShape && typeof boxShape.fillcolor === "string"
+            ? boxShape.fillcolor
+            : null,
+          textColor: annotation
+            && annotation.font
+            && typeof annotation.font.color === "string"
+              ? annotation.font.color
+              : null,
+        }};
+      }});
+      audioElements.forEach((audioElement, index) => {{
+        const info = audioInfos[index];
+        if (!(audioElement instanceof HTMLAudioElement) || !info) return;
+        const resolvedSrc = resolveAudioSrc(audioElement.getAttribute("src") || "");
+        if (resolvedSrc && audioElement.getAttribute("src") !== resolvedSrc) {{
+          audioElement.src = resolvedSrc;
+        }}
+        audioElement.preload = "metadata";
+        audioElement.addEventListener("error", () => {{
+          console.error("plotwave failed to load audio", {{
+            src: audioElement.currentSrc || audioElement.src,
+            info,
+          }});
+        }});
+      }});
       let currentAudioIndex = 0;
       let currentAudio = audioElements[currentAudioIndex];
+      let activeLoop = null;
       let animationFrameId = null;
       let playbackAnchorAudioTime = 0;
       let playbackAnchorClock = 0;
       let lastCursorDrawnTime = null;
       let lastCursorDrawnAt = 0;
       const cursorFrameIntervalMs = 33;
+      const loopEpsilonSeconds = 0.01;
+      const inactiveBandFill = "rgba(180, 180, 180, 0.08)";
+      const inactiveBoxFill = "rgba(150, 150, 150, 0.82)";
+      const inactiveTextColor = "#f2f2f2";
 
       const cursorTraceIndex = () => plotData.length - 1;
       const nowMs = () => performance.now();
       const currentInfo = () => audioInfos[currentAudioIndex];
+      const isTimeRangeInsideInfo = (startTime, endTime, info) => (
+        startTime >= info.start_time - loopEpsilonSeconds
+        && endTime <= info.start_time + info.duration + loopEpsilonSeconds
+      );
       const clampAudioTime = (audioTime, info = currentInfo()) => Math.max(
         0,
         Math.min(info.duration, audioTime)
       );
+      const findAudioIndexForRange = (startTime, endTime) => {{
+        const info = currentInfo();
+        if (isTimeRangeInsideInfo(startTime, endTime, info)) {{
+          return currentAudioIndex;
+        }}
+        return audioInfos.findIndex((candidate) => (
+          isTimeRangeInsideInfo(startTime, endTime, candidate)
+        ));
+      }};
+      const currentLoopRange = () => {{
+        if (!activeLoop) return null;
+        const info = currentInfo();
+        if (!isTimeRangeInsideInfo(activeLoop.start, activeLoop.end, info)) {{
+          return null;
+        }}
+        const start = clampAudioTime(activeLoop.start - info.start_time, info);
+        const end = clampAudioTime(activeLoop.end - info.start_time, info);
+        if (end - start <= 1e-4) return null;
+        return {{ start, end }};
+      }};
+      const updateLoopVisuals = () => {{
+        if (segmentVisuals.length === 0) return;
+        const loopVisualUpdates = {{}};
+        segmentInfos.forEach((segment, index) => {{
+          const visuals = segmentVisuals[index];
+          const isInactive = activeLoop !== null && segment !== activeLoop;
+          if (visuals.bandFillcolor !== null) {{
+            loopVisualUpdates[`shapes[${{visuals.bandShapeIndex}}].fillcolor`] = isInactive
+              ? inactiveBandFill
+              : visuals.bandFillcolor;
+          }}
+          if (visuals.boxFillcolor !== null) {{
+            loopVisualUpdates[`shapes[${{visuals.boxShapeIndex}}].fillcolor`] = isInactive
+              ? inactiveBoxFill
+              : visuals.boxFillcolor;
+          }}
+          if (visuals.textColor !== null) {{
+            loopVisualUpdates[`annotations[${{visuals.annotationIndex}}].font.color`] = isInactive
+              ? inactiveTextColor
+              : visuals.textColor;
+          }}
+        }});
+        Plotly.relayout(plotDiv, loopVisualUpdates);
+      }};
+      const clearLoop = () => {{
+        activeLoop = null;
+        updateLoopVisuals();
+      }};
+      const alignCurrentAudioToLoop = () => {{
+        const loopRange = currentLoopRange();
+        if (!loopRange) return false;
+        if (
+          currentAudio.currentTime < loopRange.start
+          || currentAudio.currentTime >= loopRange.end - loopEpsilonSeconds
+        ) {{
+          currentAudio.currentTime = loopRange.start;
+          setPlaybackAnchor(loopRange.start);
+          syncTimeline(currentInfo().start_time + loopRange.start, true);
+          return true;
+        }}
+        return false;
+      }};
+      const maybeWrapLoop = () => {{
+        const loopRange = currentLoopRange();
+        if (!loopRange) return false;
+        if (currentAudio.currentTime < loopRange.end - loopEpsilonSeconds) return false;
+        currentAudio.currentTime = loopRange.start;
+        setPlaybackAnchor(loopRange.start);
+        syncTimeline(currentInfo().start_time + loopRange.start, true);
+        return true;
+      }};
       const setPlaybackAnchor = (audioTime = currentAudio.currentTime) => {{
         playbackAnchorAudioTime = clampAudioTime(audioTime);
         playbackAnchorClock = nowMs();
@@ -343,6 +535,7 @@ def build_html(
       }};
       const startPlayback = () => {{
         if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
+        alignCurrentAudioToLoop();
         setPlaybackAnchor(currentAudio.currentTime);
         const playResult = currentAudio.play();
         if (playResult && typeof playResult.then === "function") {{
@@ -405,6 +598,45 @@ def build_html(
         const clickXPixel = clientX - plotRect.left - fullLayout.margin.l;
         return fullLayout.xaxis.p2c(clickXPixel);
       }};
+      const eventToPaperY = (clientY) => {{
+        const fullLayout = plotDiv._fullLayout;
+        if (!fullLayout) return null;
+        const plotArea = plotDiv.querySelector(".nsewdrag");
+        if (plotArea instanceof Element) {{
+          const plotAreaRect = plotArea.getBoundingClientRect();
+          if (plotAreaRect.height <= 0) return null;
+          const clickYPixel = clientY - plotAreaRect.top;
+          if (clickYPixel < 0 || clickYPixel > plotAreaRect.height) return null;
+          return 1 - (clickYPixel / plotAreaRect.height);
+        }}
+        const plotRect = plotDiv.getBoundingClientRect();
+        const plotHeight = plotRect.height - fullLayout.margin.t - fullLayout.margin.b;
+        if (plotHeight <= 0) return null;
+        const clickYPixel = clientY - plotRect.top - fullLayout.margin.t;
+        if (clickYPixel < 0 || clickYPixel > plotHeight) return null;
+        return 1 - (clickYPixel / plotHeight);
+      }};
+      const labelBoxForLane = (lane) => (
+        lane === "bottom"
+          ? {{ y0: 0.015, y1: 0.10 }}
+          : {{ y0: 0.90, y1: 0.985 }}
+      );
+      const segmentLoopForPoint = (globalTime, paperY) => {{
+        if (paperY === null) return null;
+        for (let index = segmentInfos.length - 1; index >= 0; index -= 1) {{
+          const segment = segmentInfos[index];
+          const labelBox = labelBoxForLane(segment.lane);
+          if (
+            globalTime >= segment.start - loopEpsilonSeconds
+            && globalTime <= segment.end + loopEpsilonSeconds
+            && paperY >= labelBox.y0
+            && paperY <= labelBox.y1
+          ) {{
+            return segment;
+          }}
+        }}
+        return null;
+      }};
       const seekBy = (deltaSeconds) => {{
         const info = currentInfo();
         const nextTime = Math.max(
@@ -426,22 +658,12 @@ def build_html(
           stopPlayback();
         }}
       }};
-
-      const updatePlayback = () => {{
-        if (!currentAudio || currentAudio.paused) return;
-        syncTimeline(currentGlobalTime());
-        animationFrameId = requestAnimationFrame(updatePlayback);
-      }};
-
-      toggleBtn.onclick = togglePlayback;
-
-      channelSelect.onchange = () => {{
-        const previousInfo = audioInfos[currentAudioIndex];
-        const globalTime = previousInfo.start_time + currentAudio.currentTime;
+      const switchAudioTrack = (nextIndex, globalTime) => {{
         const wasPlaying = !currentAudio.paused;
         currentAudio.pause();
         if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
-        currentAudioIndex = Number(channelSelect.value);
+        currentAudioIndex = nextIndex;
+        channelSelect.value = String(nextIndex);
         currentAudio = audioElements[currentAudioIndex];
         currentAudio.playbackRate = Number(speedSelect.value);
         const nextInfo = audioInfos[currentAudioIndex];
@@ -454,8 +676,55 @@ def build_html(
           currentAudio.currentTime = 0;
         }}
 
+        if (activeLoop && !isTimeRangeInsideInfo(activeLoop.start, activeLoop.end, nextInfo)) {{
+          clearLoop();
+        }}
+
         setPlaybackAnchor(currentAudio.currentTime);
         syncTimeline(isInsideNextAudio ? globalTime : nextInfo.start_time, true);
+        return {{ wasPlaying, isInsideNextAudio }};
+      }};
+      const activateLoop = (segment) => {{
+        const nextAudioIndex = findAudioIndexForRange(segment.start, segment.end);
+        if (nextAudioIndex === -1) {{
+          console.warn("plotwave could not loop segment outside audio bounds", segment);
+          return;
+        }}
+        if (currentAudioIndex !== nextAudioIndex) {{
+          switchAudioTrack(nextAudioIndex, segment.start);
+        }} else {{
+          currentAudio.pause();
+          if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
+        }}
+        activeLoop = segment;
+        updateLoopVisuals();
+        const info = currentInfo();
+        const targetTime = clampAudioTime(segment.start - info.start_time, info);
+        currentAudio.currentTime = targetTime;
+        setPlaybackAnchor(targetTime);
+        syncTimeline(segment.start, true);
+        startPlayback();
+      }};
+
+      const updatePlayback = () => {{
+        if (!currentAudio || currentAudio.paused) return;
+        if (maybeWrapLoop()) {{
+          animationFrameId = requestAnimationFrame(updatePlayback);
+          return;
+        }}
+        syncTimeline(currentGlobalTime());
+        animationFrameId = requestAnimationFrame(updatePlayback);
+      }};
+
+      toggleBtn.onclick = togglePlayback;
+
+      channelSelect.onchange = () => {{
+        const previousInfo = audioInfos[currentAudioIndex];
+        const globalTime = previousInfo.start_time + currentAudio.currentTime;
+        const {{ wasPlaying, isInsideNextAudio }} = switchAudioTrack(
+          Number(channelSelect.value),
+          globalTime,
+        );
 
         if (wasPlaying && isInsideNextAudio) {{
           startPlayback();
@@ -479,6 +748,7 @@ def build_html(
       audioElements.forEach((audioElement, index) => {{
         audioElement.ontimeupdate = () => {{
           if (index !== currentAudioIndex) return;
+          if (!audioElement.paused && maybeWrapLoop()) return;
           setPlaybackAnchor(audioElement.currentTime);
         }};
         audioElement.onseeked = () => {{
@@ -488,6 +758,17 @@ def build_html(
         }};
         audioElement.onended = () => {{
           if (index !== currentAudioIndex) return;
+          const loopRange = currentLoopRange();
+          if (
+            loopRange
+            && loopRange.end >= audioInfos[index].duration - loopEpsilonSeconds
+          ) {{
+            currentAudio.currentTime = loopRange.start;
+            setPlaybackAnchor(loopRange.start);
+            syncTimeline(currentInfo().start_time + loopRange.start, true);
+            startPlayback();
+            return;
+          }}
           setToggleState(false);
           if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
           const finalTime = audioInfos[index].start_time + audioInfos[index].duration;
@@ -500,6 +781,21 @@ def build_html(
         rootElement.focus();
         const globalClickTime = eventToGlobalTime(event.clientX);
         if (globalClickTime === null) return;
+        const segmentLoop = segmentLoopForPoint(globalClickTime, eventToPaperY(event.clientY));
+        if (segmentLoop) {{
+          if (segmentLoop === activeLoop) {{
+            if (!currentAudio.paused) {{
+              stopPlayback();
+            }} else {{
+              setToggleState(false);
+            }}
+            clearLoop();
+            return;
+          }}
+          activateLoop(segmentLoop);
+          return;
+        }}
+        clearLoop();
         const info = audioInfos[currentAudioIndex];
         const targetTime = globalClickTime - info.start_time;
         if (targetTime >= 0 && targetTime <= info.duration) {{

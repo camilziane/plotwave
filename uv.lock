@@ -1362,11 +1362,12 @@ wheels = [
 
 [[package]]
 name = "plotwave"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "lameenc" },
     { name = "numpy" },
+    { name = "soundfile" },
 ]
 
 [package.dev-dependencies]
@@ -1375,7 +1376,6 @@ dev = [
     { name = "mypy" },
     { name = "pytest" },
     { name = "ruff" },
-    { name = "soundfile" },
 ]
 notebook = [
     { name = "ipykernel" },
@@ -1386,6 +1386,7 @@ notebook = [
 requires-dist = [
     { name = "lameenc", specifier = ">=1.8.2" },
     { name = "numpy", specifier = ">=1.26" },
+    { name = "soundfile", specifier = ">=0.12.1" },
 ]
 
 [package.metadata.requires-dev]
@@ -1394,7 +1395,6 @@ dev = [
     { name = "mypy", specifier = ">=1.15.0" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "ruff", specifier = ">=0.11.0" },
-    { name = "soundfile", specifier = ">=0.12.1" },
 ]
 notebook = [
     { name = "ipykernel", specifier = ">=6.29.5" },

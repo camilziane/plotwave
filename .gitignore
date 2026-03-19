@@ -10,4 +10,4 @@ dist/
 build/
 notebooks/*.html
 notebook_test
-
+plotwave-assets/
