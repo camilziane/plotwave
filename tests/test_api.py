@@ -380,14 +380,25 @@ def test_multitrace_layout_and_config_are_propagated() -> None:
     assert "const maybeWrapLoop = () => {" in html
     assert "const activateLoop = (segment) => {" in html
     assert "const segmentLoopForPoint = (globalTime, paperY) => {" in html
+    assert "const updateHoverCursor = (clientX, clientY) => {" in html
     assert "const updateLoopVisuals = () => {" in html
     assert 'const inactiveBoxFill = "rgba(150, 150, 150, 0.82)";' in html
     assert "let playbackAnchorAudioTime = 0;" in html
-    assert "const setPlaybackAnchor = (audioTime = currentAudio.currentTime) => {" in html
-    assert "const cursorFrameIntervalMs = 33;" in html
+    assert "const setPlaybackAnchor = (audioTime = currentAudio.currentTime, force = false) => {" in html
+    assert "if (drift < 0 && Math.abs(drift) < 0.12) return;" in html
+    assert "let syncCursorPosition = null;" in html
+    assert "const syncCursorOverlayBounds = () => {" in html
+    assert 'cursorLine.style.transform = `translate3d(${clampedX}px, 0, 0)`;' in html
     assert 'const plotArea = plotDiv.querySelector(".nsewdrag");' in html
+    assert ".plotwave-label-hover * {" in html
+    assert "cursor: pointer !important;" in html
+    assert "pointer-events: none;" in html
+    assert "will-change: transform;" in html
+    assert 'plotDiv.classList.toggle("plotwave-label-hover", Boolean(hoverSegment));' in html
     assert "const eventToGlobalTime = (clientX) => {" in html
     assert "audioElement.ontimeupdate = () => {" in html
+    assert 'audioElement.preload = info.duration <= 20 ? "auto" : "metadata";' in html
+    assert 'if (audioElement.preload === "auto") {' in html
     assert 'const playResult = currentAudio.play();' in html
     assert 'rootElement.addEventListener("keydown", (event) => {' in html
     assert "width: 94px;" in html
@@ -400,6 +411,7 @@ def test_multitrace_layout_and_config_are_propagated() -> None:
     assert "line-height: 1.2;" in html
     assert 'const resizePlot = () => Plotly.Plots.resize(plotDiv);' in html
     assert 'const resizeObserver = new ResizeObserver(() => resizePlot());' in html
+    assert 'const cursorResizeObserver = new ResizeObserver(() => {' in html
     assert 'if (event.code === "Space") {' in html
     assert 'if (event.key === "j" || event.key === "J") {' in html
     assert 'if (event.key === "l" || event.key === "L") {' in html

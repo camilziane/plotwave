@@ -35,7 +35,10 @@ def build_html(
     segment_infos: list[dict[str, Any]] | None = None,
 ) -> str:
     root_id = f"plotwave-{uuid.uuid4().hex}"
+    plot_shell_id = f"{root_id}-plot-shell"
     plot_id = f"{root_id}-plot"
+    cursor_overlay_id = f"{root_id}-cursor-overlay"
+    cursor_line_id = f"{root_id}-cursor-line"
     controls_id = f"{root_id}-controls"
     controls_group_id = f"{root_id}-controls-group"
     timing_group_id = f"{root_id}-timing-group"
@@ -78,7 +81,6 @@ def build_html(
     controls_disabled = "disabled" if not audio_infos else ""
     controls_style = "" if audio_infos else "display: none;"
     x_range = layout.get("xaxis", {}).get("range", [0.0, 1.0])
-    y_range = layout.get("yaxis", {}).get("range", [-1.0, 1.0])
     audio_element_ids = [f"{root_id}-audio-{index}" for index in range(len(audio_infos))]
     title = layout.get("title", "plotwave")
     if isinstance(title, dict):
@@ -136,10 +138,41 @@ def build_html(
       font-size: 12px;
       letter-spacing: 0.01em;
     }}
-    #{plot_id} {{
+    #{plot_shell_id} {{
       width: 100%;
       flex: 1 1 auto;
       min-height: 240px;
+      position: relative;
+    }}
+    #{plot_id} {{
+      width: 100%;
+      height: 100%;
+    }}
+    #{cursor_overlay_id} {{
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 0;
+      height: 0;
+      opacity: 0;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 2;
+    }}
+    #{cursor_line_id} {{
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -1.25px;
+      width: 2.5px;
+      border-radius: 999px;
+      background: red;
+      transform: translate3d(0, 0, 0);
+      will-change: transform;
+    }}
+    #{plot_id}.plotwave-label-hover,
+    #{plot_id}.plotwave-label-hover * {{
+      cursor: pointer !important;
     }}
     select, button {{
       font: inherit;
@@ -261,13 +294,21 @@ def build_html(
         </span>
       </div>
     </div>
-    <div id="{plot_id}"></div>
+    <div id="{plot_shell_id}">
+      <div id="{plot_id}"></div>
+      <div id="{cursor_overlay_id}">
+        <div id="{cursor_line_id}"></div>
+      </div>
+    </div>
     {audio_elements_html}
   </div>
   <script>
     const rootElement = document.getElementById({json.dumps(root_id)});
+    const plotShell = document.getElementById({json.dumps(plot_shell_id)});
     const controlsDiv = document.getElementById({json.dumps(controls_id)});
     const plotDiv = document.getElementById({json.dumps(plot_id)});
+    const cursorOverlay = document.getElementById({json.dumps(cursor_overlay_id)});
+    const cursorLine = document.getElementById({json.dumps(cursor_line_id)});
     const plotData = {json.dumps(plotly_traces)};
     const layout = {json.dumps(layout)};
     const config = {json.dumps(config)};
@@ -344,21 +385,16 @@ def build_html(
       return src;
     }};
 
-    if (audioInfos.length > 0) {{
-      const initialTime = audioInfos[0].start_time;
-      plotData.push({{
-        x: [initialTime, initialTime],
-        y: [{json.dumps(y_range[0])}, {json.dumps(y_range[1])}],
-        mode: "lines",
-        type: "scatter",
-        name: "cursor",
-        showlegend: false,
-        line: {{ color: "red", width: 2.5 }}
-      }});
-    }}
+    let syncCursorPosition = null;
+    const plotReady = Plotly.newPlot(plotDiv, plotData, layout, config);
 
-    Plotly.newPlot(plotDiv, plotData, layout, config).then(() => {{
-      requestAnimationFrame(() => requestAnimationFrame(resizePlot));
+    plotReady.then(() => {{
+      requestAnimationFrame(() => requestAnimationFrame(() => {{
+        resizePlot();
+        if (typeof syncCursorPosition === "function") {{
+          syncCursorPosition(true);
+        }}
+      }}));
     }});
 
     if (typeof ResizeObserver !== "undefined") {{
@@ -403,7 +439,10 @@ def build_html(
         if (resolvedSrc && audioElement.getAttribute("src") !== resolvedSrc) {{
           audioElement.src = resolvedSrc;
         }}
-        audioElement.preload = "metadata";
+        audioElement.preload = info.duration <= 20 ? "auto" : "metadata";
+        if (audioElement.preload === "auto") {{
+          audioElement.load();
+        }}
         audioElement.addEventListener("error", () => {{
           console.error("plotwave failed to load audio", {{
             src: audioElement.currentSrc || audioElement.src,
@@ -418,16 +457,48 @@ def build_html(
       let playbackAnchorAudioTime = 0;
       let playbackAnchorClock = 0;
       let lastCursorDrawnTime = null;
-      let lastCursorDrawnAt = 0;
-      const cursorFrameIntervalMs = 33;
+      let lastCursorPixel = null;
       const loopEpsilonSeconds = 0.01;
       const inactiveBandFill = "rgba(180, 180, 180, 0.08)";
       const inactiveBoxFill = "rgba(150, 150, 150, 0.82)";
       const inactiveTextColor = "#f2f2f2";
 
-      const cursorTraceIndex = () => plotData.length - 1;
       const nowMs = () => performance.now();
       const currentInfo = () => audioInfos[currentAudioIndex];
+      const plotAreaMetrics = () => {{
+        const fullLayout = plotDiv._fullLayout;
+        if (!fullLayout || !fullLayout.xaxis) return null;
+        const plotArea = plotDiv.querySelector(".nsewdrag");
+        if (!(plotArea instanceof Element)) return null;
+        const plotAreaRect = plotArea.getBoundingClientRect();
+        const plotRect = plotDiv.getBoundingClientRect();
+        if (plotAreaRect.width <= 0 || plotAreaRect.height <= 0) return null;
+        return {{
+          xaxis: fullLayout.xaxis,
+          left: plotAreaRect.left - plotRect.left,
+          top: plotAreaRect.top - plotRect.top,
+          width: plotAreaRect.width,
+          height: plotAreaRect.height,
+        }};
+      }};
+      const syncCursorOverlayBounds = () => {{
+        const metrics = plotAreaMetrics();
+        if (!metrics) {{
+          cursorOverlay.style.opacity = "0";
+          lastCursorPixel = null;
+          return null;
+        }}
+        const left = `${{metrics.left}}px`;
+        const top = `${{metrics.top}}px`;
+        const width = `${{metrics.width}}px`;
+        const height = `${{metrics.height}}px`;
+        if (cursorOverlay.style.left !== left) cursorOverlay.style.left = left;
+        if (cursorOverlay.style.top !== top) cursorOverlay.style.top = top;
+        if (cursorOverlay.style.width !== width) cursorOverlay.style.width = width;
+        if (cursorOverlay.style.height !== height) cursorOverlay.style.height = height;
+        if (cursorOverlay.style.opacity !== "1") cursorOverlay.style.opacity = "1";
+        return metrics;
+      }};
       const isTimeRangeInsideInfo = (startTime, endTime, info) => (
         startTime >= info.start_time - loopEpsilonSeconds
         && endTime <= info.start_time + info.duration + loopEpsilonSeconds
@@ -436,6 +507,11 @@ def build_html(
         0,
         Math.min(info.duration, audioTime)
       );
+      const setCurrentAudioTime = (nextTime, info = currentInfo()) => {{
+        const clampedTime = clampAudioTime(nextTime, info);
+        currentAudio.currentTime = clampedTime;
+        return clampedTime;
+      }};
       const findAudioIndexForRange = (startTime, endTime) => {{
         const info = currentInfo();
         if (isTimeRangeInsideInfo(startTime, endTime, info)) {{
@@ -487,13 +563,14 @@ def build_html(
       const alignCurrentAudioToLoop = () => {{
         const loopRange = currentLoopRange();
         if (!loopRange) return false;
+        const info = currentInfo();
         if (
           currentAudio.currentTime < loopRange.start
           || currentAudio.currentTime >= loopRange.end - loopEpsilonSeconds
         ) {{
-          currentAudio.currentTime = loopRange.start;
-          setPlaybackAnchor(loopRange.start);
-          syncTimeline(currentInfo().start_time + loopRange.start, true);
+          const nextTime = setCurrentAudioTime(loopRange.start, info);
+          setPlaybackAnchor(nextTime, true);
+          syncTimelineIfSettled(info.start_time + nextTime, true);
           return true;
         }}
         return false;
@@ -502,13 +579,24 @@ def build_html(
         const loopRange = currentLoopRange();
         if (!loopRange) return false;
         if (currentAudio.currentTime < loopRange.end - loopEpsilonSeconds) return false;
-        currentAudio.currentTime = loopRange.start;
-        setPlaybackAnchor(loopRange.start);
-        syncTimeline(currentInfo().start_time + loopRange.start, true);
+        const info = currentInfo();
+        const nextTime = setCurrentAudioTime(loopRange.start, info);
+        setPlaybackAnchor(nextTime, true);
+        syncTimelineIfSettled(info.start_time + nextTime, true);
         return true;
       }};
-      const setPlaybackAnchor = (audioTime = currentAudio.currentTime) => {{
-        playbackAnchorAudioTime = clampAudioTime(audioTime);
+      const setPlaybackAnchor = (audioTime = currentAudio.currentTime, force = false) => {{
+        const clampedAudioTime = clampAudioTime(audioTime);
+        if (!force && !currentAudio.paused) {{
+          const predictedAudioTime = clampAudioTime(
+            playbackAnchorAudioTime
+            + ((nowMs() - playbackAnchorClock) / 1000) * currentAudio.playbackRate,
+          );
+          const drift = clampedAudioTime - predictedAudioTime;
+          if (Math.abs(drift) < 0.01) return;
+          if (drift < 0 && Math.abs(drift) < 0.12) return;
+        }}
+        playbackAnchorAudioTime = clampedAudioTime;
         playbackAnchorClock = nowMs();
       }};
       const currentGlobalTime = () => {{
@@ -522,13 +610,16 @@ def build_html(
             );
         return info.start_time + audioTime;
       }};
+      const syncTimelineIfSettled = (time, force = false) => {{
+        syncTimeline(time, force);
+      }};
       const setToggleState = (isPlaying) => {{
         toggleIcon.textContent = isPlaying ? "⏸" : "▶";
         toggleLabel.textContent = isPlaying ? "Pause" : "Play";
       }};
       const stopPlayback = () => {{
         currentAudio.pause();
-        setPlaybackAnchor(currentAudio.currentTime);
+        setPlaybackAnchor(currentAudio.currentTime, true);
         syncTimeline(currentGlobalTime(), true);
         setToggleState(false);
         if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
@@ -564,24 +655,34 @@ def build_html(
         }}
       }};
       const drawCursor = (time, force = false) => {{
-        const drawAt = nowMs();
         if (!force) {{
           if (lastCursorDrawnTime !== null && Math.abs(time - lastCursorDrawnTime) < 1e-4) {{
             return;
           }}
-          if (drawAt - lastCursorDrawnAt < cursorFrameIntervalMs) {{
-            return;
-          }}
+        }}
+        const metrics = syncCursorOverlayBounds();
+        if (!metrics) return;
+        const cursorX = metrics.xaxis.c2p(time);
+        if (!Number.isFinite(cursorX)) {{
+          cursorOverlay.style.opacity = "0";
+          lastCursorPixel = null;
+          return;
+        }}
+        const clampedX = Math.max(0, Math.min(metrics.width, cursorX));
+        if (!force && lastCursorPixel !== null && Math.abs(clampedX - lastCursorPixel) < 0.1) {{
+          lastCursorDrawnTime = time;
+          return;
         }}
         lastCursorDrawnTime = time;
-        lastCursorDrawnAt = drawAt;
-        return (
-        Plotly.restyle(plotDiv, {{ x: [[time, time]] }}, [cursorTraceIndex()])
-        );
+        lastCursorPixel = clampedX;
+        cursorLine.style.transform = `translate3d(${{clampedX}}px, 0, 0)`;
       }};
       const syncTimeline = (time, force = false) => {{
         updateCurrentTimeLabel(time);
         drawCursor(time, force);
+      }};
+      syncCursorPosition = (force = true) => {{
+        syncTimeline(currentGlobalTime(), force);
       }};
       const eventToGlobalTime = (clientX) => {{
         const fullLayout = plotDiv._fullLayout;
@@ -637,15 +738,22 @@ def build_html(
         }}
         return null;
       }};
+      const updateHoverCursor = (clientX, clientY) => {{
+        const globalHoverTime = eventToGlobalTime(clientX);
+        const hoverSegment = globalHoverTime === null
+          ? null
+          : segmentLoopForPoint(globalHoverTime, eventToPaperY(clientY));
+        plotDiv.classList.toggle("plotwave-label-hover", Boolean(hoverSegment));
+      }};
       const seekBy = (deltaSeconds) => {{
         const info = currentInfo();
         const nextTime = Math.max(
           0,
           Math.min(info.duration, currentAudio.currentTime + deltaSeconds)
         );
-        currentAudio.currentTime = nextTime;
-        setPlaybackAnchor(nextTime);
-        syncTimeline(info.start_time + nextTime, true);
+        setCurrentAudioTime(nextTime, info);
+        setPlaybackAnchor(nextTime, true);
+        syncTimelineIfSettled(info.start_time + nextTime, true);
         if (!currentAudio.paused) {{
           if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
           animationFrameId = requestAnimationFrame(updatePlayback);
@@ -671,17 +779,17 @@ def build_html(
         const isInsideNextAudio = nextTime >= 0 && nextTime <= nextInfo.duration;
 
         if (isInsideNextAudio) {{
-          currentAudio.currentTime = nextTime;
+          setCurrentAudioTime(nextTime, nextInfo);
         }} else {{
-          currentAudio.currentTime = 0;
+          setCurrentAudioTime(0, nextInfo);
         }}
 
         if (activeLoop && !isTimeRangeInsideInfo(activeLoop.start, activeLoop.end, nextInfo)) {{
           clearLoop();
         }}
 
-        setPlaybackAnchor(currentAudio.currentTime);
-        syncTimeline(isInsideNextAudio ? globalTime : nextInfo.start_time, true);
+        setPlaybackAnchor(currentAudio.currentTime, true);
+        syncTimelineIfSettled(isInsideNextAudio ? globalTime : nextInfo.start_time, true);
         return {{ wasPlaying, isInsideNextAudio }};
       }};
       const activateLoop = (segment) => {{
@@ -699,10 +807,9 @@ def build_html(
         activeLoop = segment;
         updateLoopVisuals();
         const info = currentInfo();
-        const targetTime = clampAudioTime(segment.start - info.start_time, info);
-        currentAudio.currentTime = targetTime;
-        setPlaybackAnchor(targetTime);
-        syncTimeline(segment.start, true);
+        const targetTime = setCurrentAudioTime(segment.start - info.start_time, info);
+        setPlaybackAnchor(targetTime, true);
+        syncTimelineIfSettled(segment.start, true);
         startPlayback();
       }};
 
@@ -741,7 +848,7 @@ def build_html(
         audioElements.forEach((audioElement) => {{
           audioElement.playbackRate = rate;
         }});
-        setPlaybackAnchor(currentAudio.currentTime);
+        setPlaybackAnchor(currentAudio.currentTime, true);
         syncTimeline(currentGlobalTime(), true);
       }};
 
@@ -755,6 +862,10 @@ def build_html(
           if (index !== currentAudioIndex) return;
           setPlaybackAnchor(audioElement.currentTime);
           syncTimeline(currentGlobalTime(), true);
+          if (!audioElement.paused) {{
+            if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
+            animationFrameId = requestAnimationFrame(updatePlayback);
+          }}
         }};
         audioElement.onended = () => {{
           if (index !== currentAudioIndex) return;
@@ -763,20 +874,26 @@ def build_html(
             loopRange
             && loopRange.end >= audioInfos[index].duration - loopEpsilonSeconds
           ) {{
-            currentAudio.currentTime = loopRange.start;
-            setPlaybackAnchor(loopRange.start);
-            syncTimeline(currentInfo().start_time + loopRange.start, true);
+            const nextTime = setCurrentAudioTime(loopRange.start);
+            setPlaybackAnchor(nextTime, true);
+            syncTimelineIfSettled(currentInfo().start_time + nextTime, true);
             startPlayback();
             return;
           }}
           setToggleState(false);
           if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
           const finalTime = audioInfos[index].start_time + audioInfos[index].duration;
-          setPlaybackAnchor(audioInfos[index].duration);
+          setPlaybackAnchor(audioInfos[index].duration, true);
           syncTimeline(finalTime, true);
         }};
       }});
 
+      plotDiv.addEventListener("mousemove", (event) => {{
+        updateHoverCursor(event.clientX, event.clientY);
+      }});
+      plotDiv.addEventListener("mouseleave", () => {{
+        plotDiv.classList.remove("plotwave-label-hover");
+      }});
       plotDiv.addEventListener("click", (event) => {{
         rootElement.focus();
         const globalClickTime = eventToGlobalTime(event.clientX);
@@ -799,9 +916,9 @@ def build_html(
         const info = audioInfos[currentAudioIndex];
         const targetTime = globalClickTime - info.start_time;
         if (targetTime >= 0 && targetTime <= info.duration) {{
-          currentAudio.currentTime = targetTime;
-          setPlaybackAnchor(targetTime);
-          syncTimeline(globalClickTime, true);
+          setCurrentAudioTime(targetTime, info);
+          setPlaybackAnchor(targetTime, true);
+          syncTimelineIfSettled(globalClickTime, true);
           if (!currentAudio.paused) {{
             if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
             animationFrameId = requestAnimationFrame(updatePlayback);
@@ -838,12 +955,23 @@ def build_html(
           seekBy(5);
         }}
       }});
+      if (typeof ResizeObserver !== "undefined") {{
+        const cursorResizeObserver = new ResizeObserver(() => {{
+          requestAnimationFrame(() => syncCursorPosition(true));
+        }});
+        cursorResizeObserver.observe(plotShell);
+      }}
       setToggleState(false);
-      setPlaybackAnchor(0);
+      setPlaybackAnchor(0, true);
       syncTimeline(audioInfos[currentAudioIndex].start_time, true);
     }}
 
-    window.addEventListener("resize", () => Plotly.Plots.resize(plotDiv));
+    window.addEventListener("resize", () => {{
+      Plotly.Plots.resize(plotDiv);
+      if (typeof syncCursorPosition === "function") {{
+        requestAnimationFrame(() => syncCursorPosition(true));
+      }}
+    }});
   </script>
 </body>
 </html>

@@ -11,3 +11,7 @@ build/
 notebooks/*.html
 notebook_test
 plotwave-assets/
+docs/*.png
+docs/*.svg
+docs/*.ico
+docs/*.webmanifest

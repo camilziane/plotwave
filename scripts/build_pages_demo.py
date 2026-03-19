@@ -2,15 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import shutil
-import sys
-from importlib import import_module
 from pathlib import Path
 
 import plotwave
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 REPO_URL = "https://github.com/camilziane/plotwave"
 PAGES_URL = "https://camilziane.github.io/plotwave/"
@@ -63,62 +59,60 @@ def main() -> None:
 """,
         encoding="utf-8",
     )
-    signal_helpers = import_module("examples.signal_helpers")
-    build_progression = signal_helpers.build_progression
-    segment_items = signal_helpers.segment_items
-
-    sr = 16_000
-    first_progression_names = ["Bm", "G", "D", "A"]
-    second_progression_names = ["Bm", "D", "F#m", "E"]
-    time, first_progression, first_segments = build_progression(first_progression_names, sr=sr)
-    time_alt, second_progression, second_segments = build_progression(
-        second_progression_names,
-        sr=sr,
-    )
-
-    first_color = "#2563eb"
-    second_color = "#ea580c"
-    first_segment_items = [{**item, "color": first_color} for item in segment_items(first_segments)]
-    second_segment_items = [
-        {**item, "color": second_color} for item in segment_items(second_segments)
-    ]
-    max_time = max(float(time[-1]), float(time_alt[-1]))
+    first_audio_path = REPO_ROOT / "examples" / "plotwave_C.mp3"
+    second_audio_path = REPO_ROOT / "examples" / "plotwave_E5.mp3"
 
     demo = plotwave.plot(
         [
-            plotwave.audio(
-                first_progression,
-                sr,
-                time=time,
-                name="Progression 1",
-                color=first_color,
+            plotwave.audio_file(
+                first_audio_path,
+                name="First Audio",
+                color="#2563eb",
                 line={"width": 1.3},
-                hovertemplate="t=%{x:.2f}s<br>sample=%{y:.3f}<extra>Audio</extra>",
             ),
-            plotwave.audio(
-                second_progression,
-                sr,
-                time=time_alt,
-                name="Progression 2",
-                color=second_color,
+            plotwave.audio_file(
+                second_audio_path,
+                name="Second Audio",
+                color="#ea580c",
                 line={"width": 1.3, "dash": "dot"},
-                hovertemplate="t=%{x:.2f}s<br>sample=%{y:.3f}<extra>Audio</extra>",
             ),
             plotwave.segments(
-                first_segment_items,
-                name="Progression 1",
+                [
+                    {"start": 0.0, "end": 2.09, "label": "C"},
+                    {"start": 2.09, "end": 4.18, "label": "Asus2"},
+                    {"start": 4.18, "end": 6.27, "label": "Esus2"},
+                    {"start": 6.27, "end": 8.36, "label": "B"},
+                ],
+                name="First Chords",
                 lane="top",
                 textfont={"color": "white"},
+                color_map={
+                    "C": "#0f62fe",
+                    "Asus2": "#367af7",
+                    "Esus2": "#82adfc",
+                    "B": "#bcd2fb",
+                },
             ),
             plotwave.segments(
-                second_segment_items,
-                name="Progression 2",
+                [
+                    {"start": 0.0, "end": 2.09, "label": "E5"},
+                    {"start": 2.09, "end": 4.18, "label": "B"},
+                    {"start": 4.18, "end": 6.27, "label": "B"},
+                    {"start": 6.27, "end": 8.36, "label": "F#"},
+                ],
+                name="Second Chords",
                 lane="bottom",
                 textfont={"color": "white"},
+                color_map={
+                    "E5": "#fe5b0f",
+                    "B": "#ff7636",
+                    "B": "#f79466",
+                    "F#": "#fdbc9e",
+                },
             ),
         ],
         layout={
-            "title": {"text": "Two chord progressions, one player"},
+            "title": {"text": "Two MP3 tracks with loopable chord labels"},
             "height": 640,
             "plot_bgcolor": "#fffdf8",
             "paper_bgcolor": "#ffffff",
@@ -132,7 +126,6 @@ def main() -> None:
                 "showgrid": True,
                 "gridcolor": "#e7edf5",
                 "zeroline": False,
-                "range": [0, max_time * 1.08],
             },
             "yaxis": {
                 "title": {"text": "Amplitude"},
@@ -367,8 +360,8 @@ def main() -> None:
         <p class="lede">
           <strong>plotwave</strong> is a Python library that turns Plotly
           signal views into interactive, playable audio plots. This demo lets
-          you switch between two chord progressions while keeping both labeled
-          segment lanes in view.
+          you switch between two real MP3 tracks while keeping both labeled
+          chord lanes in view and loop a chord by clicking its label.
         </p>
         <div class="actions">
           <a class="button primary" href="demo.html?v={demo_version}">Open demo only</a>
@@ -403,8 +396,8 @@ def main() -> None:
 
     <section class="notes">
       <div>
-        Try clicking directly on the waveform to seek, then switch between
-        segment lanes while listening.
+        Try clicking directly on the waveform to seek, then click a chord label
+        to loop that region while switching between the two audio tracks.
       </div>
       <div>Live page URL: <a href="{PAGES_URL}">{PAGES_URL}</a></div>
       <div>Rebuild locally with <code>uv run python scripts/build_pages_demo.py</code>.</div>
