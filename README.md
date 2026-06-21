@@ -11,6 +11,8 @@
   <a href="https://camilziane.github.io/plotwave/">Live interactive demo</a>
 </p>
 
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/plotwave?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/plotwave)
+
 **Click anywhere in the waveform to hear the audio while inspecting it visually.  
 Overlay multiple audio tracks or add additional signals (labels, predictions, segmentation, scores) on top of the waveform.**
 
